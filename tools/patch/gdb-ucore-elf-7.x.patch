@@ -1,0 +1,20 @@
+--- configure.tgt	2011-03-07 10:11:37.000000000 +0800
++++ configure.tgt.new	2011-03-07 10:11:13.000000000 +0800
+@@ -570,7 +570,7 @@
+ 			dicos-tdep.o i386-dicos-tdep.o amd64-dicos-tdep.o \
+ 			corelow.o solib.o solib-target.o"
+ 	;;
+-x86_64-*-linux*)
++x86_64-*-linux* | x86_64-*-elf*)
+ 	# Target: GNU/Linux x86-64
+ 	gdb_target_obs="amd64-tdep.o amd64-linux-tdep.o i386-tdep.o \
+ 			i387-tdep.o i386-linux-tdep.o glibc-tdep.o \
+@@ -619,7 +619,7 @@
+ 
+ case "${targ}" in
+ *-*-freebsd*)	gdb_osabi=GDB_OSABI_FREEBSD_ELF ;;
+-*-*-linux*)	gdb_osabi=GDB_OSABI_LINUX ;;
++*-*-linux*|x86_64-*-elf*)	gdb_osabi=GDB_OSABI_LINUX ;;
+ *-*-nto*)	gdb_osabi=GDB_OSABI_QNXNTO ;;
+ m68*-*-openbsd* | m88*-*-openbsd* | vax-*-openbsd*) ;;
+ *-*-openbsd*)	gdb_osabi=GDB_OSABI_OPENBSD_ELF ;;

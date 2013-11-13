@@ -1,0 +1,49 @@
+binutils: 2.20, 2.21
+    for i386:
+    $ ./configure --target=i386-ucore-elf --program-prefix=i386-ucore-elf- --disable-nls --disable-werror 
+    for x86_64:
+    $ ./configure --target=x86_64-ucore-elf --program-prefix=x86_64-ucore-elf- --disable-nls --disable-werror
+
+gcc-core: 4.4.3, 4.5.3
+    for i386:
+    $ mkdir i386 && cd i386
+    $ ../configure --target=i386-ucore-elf --program-prefix=i386-ucore-elf-                     \
+                            --disable-nls --without-headers --with-newlib --disable-threads     \
+                            --disable-shared --disable-libmudflap --disable-libssp 
+    for x86_64:
+    $ mkdir x86_64 && cd x86_64
+    $ ../configure --target=x86_64-ucore-elf --program-prefix=x86_64-ucore-elf-                 \
+                            --disable-nls --without-headers --with-newlib --disable-threads     \
+                            --disable-shared --disable-libmudflap --disable-libssp 
+
+    for mac OS X: 4.2.1, 4.4.2, 4.4.3 (4.4.x needs gcc-core-4.4.x.patch)
+                  require (macports): libiconv gmp mpfr
+                                      --with-gmp=/opt/local/ --with-mpfr=/opt/local/
+                : 4.5.3
+                  require (macports): libiconv gmp mpfr libiconv
+                                      --with-gmp=/opt/local/ --with-mpfr=/opt/local/ --with-mpc=/opt/local \
+                                      --with-libiconv-prefix=/opt/local
+    DON'T USE LLVM-GCC !!
+
+gdb:7.2, 7.3
+    if use host gcc/binutils (x86_64 only)
+        x86_64: (need remote patch)
+        $ ./configure --target=x86_64-linux-gnu --program-prefix=x86_64-ucore-elf- --disable-werror
+
+    else
+        i386:
+        $ ./configure --target=i386-ucore-elf --program-prefix=i386-ucore-elf- --disable-werror
+        x86_64: (need remote patch, elf patch)
+        $ ./configure --target=x86_64-ucore-elf --program-prefix=x86_64-ucore-elf- --disable-werror
+
+        (x86_64) gdb-remote-7.x.patch for qemu debug
+        (x86_64) gdb-ucore-elf-7.x.patch for gdb configure
+
+qemu: 0.14.0, 0.14.1
+    for ubuntu:
+        $ ./configure --target-list="i386-softmmu x86_64-softmmu" --enable-sdl
+    for mac:
+        $ ./configure --target-list="i386-softmmu x86_64-softmmu" --disable-sdl --enable-cocoa
+
+    need patch qemu-0.14.0-bp.patch for gdb break virtual address (linear address default)
+

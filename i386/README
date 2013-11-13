@@ -1,0 +1,112 @@
+ucore is a teaching OS which is derived from xv6&jos in MIT, OS161 in Harvard and Linux.
+The code in the files that constitute xv6&jos is Copyright 2006-2007 Frans Kaashoek, Robert Morris, and Russ Cox and uses MIT Licnese.
+The code in the files that constitute OS/161 is written by David A. Holland.
+--------------------------------------------------------------
+lab1: boot/protect mode/interrupt
+
+boot/protect mode
+---------------------
+proj1       (--)        : bootloader which can switch to protect mode & print str by serial port/LPT/CGA
+proj2       (proj1)     : bootloader which can read disk& elf file
+proj3       (proj2)     : bootloader which reads elf OS, and elf OS which can print string
+
+stack
+--------------------
+proj3.1     (proj3)     : OS can output stack info(with function name and Line number) when call panic function
+
+interrupt
+--------------------
+proj4       (proj3.1)   : OS can support interrupt response on serial(COM1), keyboard, timer device
+proj4.1     (proj4)     : OS reset the segments(now have user text/data segments) by using LGDT, LTR instruction. prepare for proj4.1.1/4.1.2
+
+user mode v.s. kernel mode
+--------------------
+proj4.1.1   (proj4.1)   : OS can switch between kernel mode and user mode using x86 INTERRUPT method
+proj4.1.2   (proj4.1)   : OS can switch between kernel mode and user mode using x86 GATE method
+--------------------
+proj4.2     (proj4.1)   : OS adds gdb remote server/stub and can support remote gdb
+proj4.3     (proj4.1)   : OS adds internal debugger support with hardware breakpoint&watchpoint functions
+
+lab2: memory management (physic/virtual)
+-------------------------
+proj5       (proj4.3)   : OS can detect the physical memory space, manage physical memory using simple method in a physical memory manager framework
+                          (the minimal allocated size is 4KB), can build page table & enable paging
+proj5.1     (proj5)     : best fit allocation (the minimal allocated size is 4KB)
+proj5.1.1   (proj5.1)   : first fit(the minimal allocated size is 4KB)
+proj5.1.2   (proj5.1)   : worst fit(the minimal allocated size is 4KB)
+proj5.2     (proj5.1)   : buddy(the minimal allocated size is 4KB, maximal size is 4MB) memory manager
+
+slab
+--------------------
+proj6       (proj5.2)   : slab memory manager for allocate/free mem size <4K (32byte ~ 128K byte)
+
+virtual memory management structure
+--------------------
+proj7       (proj6)     : page fault handler & vmm struct
+
+swap
+--------------------
+proj8       (proj7)     : swap in/out including page replacement method
+
+memory map
+--------------------
+proj9       (proj8)     : add some simple function about memory map, such as map, unmap, dup, exit, etc.
+proj9.1     (proj9)     : share memory (low level, use shmem_t)
+proj9.2     (proj9.1)   : copy on write
+
+lab3: process
+-------------------------
+proj10      (proj9.2)   : PCB, kernel thread
+proj10.1    (proj10)    : user process, read elf format file, fork, execve, load_icode, yield and a round-robin scheduler o(n)
+proj10.2    (proj10.1)  : finish syscall wait, kill, exit
+proj10.3    (proj10.2)  : sys_brk, manage heap
+proj10.4    (proj10.3)  : sleep, add timer
+proj11      (proj10.4)  : setup a kernel thread named kswapd that manage swap
+proj12      (proj11)    : syscall map, unmap, and share memory (low level, share memory between parent and children); user mode thread and thread group; user mode lock (base on share memory, test bit);
+
+lab4 scheduling
+-------------------------
+proj13      (proj12)    : scheduling framework, and a simple First Come First Serve(FCFS) scheduling method
+proj13.1    (proj13)    : RoundRobin(RR) scheduling method
+proj13.2    (proj13.1)  : MultiLevel Feedback Queue(MLFQ) scheduling method (based on RR)
+
+lab5 mutex/sync
+-------------------------
+proj14      (proj13.2)  : semaphore in kernel
+proj14.1    (proj14)    : semaphore for user process (shared among processes or threads), spipe (pipe based on semaphore/share memory)
+proj14.2    (proj14.1)  : add timeout for semaphore wait
+proj15      (proj14.2)  : event (with timeout)
+proj16      (proj15)    : mailbox
+
+lab6 filesystem
+-------------------------
+proj17      (proj16)    : vfs, file, devices(stdin, stdout, null)
+proj17.1    (proj17)    : pipe (anonymous pipe and fifo)
+proj18      (proj17.1)  : add sfs 'simple filesystem' - only file operations
+proj18.1    (proj18)    : add mkdir/link/rename/unlink (hard link)
+proj18.2    (proj18)    : add exec
+proj18.3    (proj18.2)  : add exec with arguments (at most 32)
+proj19      (proj18.3)  : shell
+
+--------- below info need to be updated ---------------
+lab3: process
+-------------------------
+extended projs:
+proj12.1    (proj12)    : processes share the memory for data (a kind of IPC between processes)
+proj12.2    (proj12)    : share the memory for shared library
+
+lab5 mutex/synch
+-------------------------
+message queue
+signal mechanism
+
+lab6 File system
+-------------------------
+FAT
+
+lab7 final big integrate lab
+-------------------------
+web server/client applications++lwip+net driver
+
+lab8 SMP support
+SMP support,and spinlock

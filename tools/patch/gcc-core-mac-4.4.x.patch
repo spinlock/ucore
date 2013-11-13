@@ -1,0 +1,11 @@
+--- gcc/Makefile.in	2010-10-26 21:38:48.000000000 +0800
++++ gcc/Makefile.in	2010-10-26 21:24:15.000000000 +0800
+@@ -560,7 +560,7 @@
+ USE_NLS = @USE_NLS@
+ 
+ # Internationalization library.
+-LIBINTL = @LIBINTL@
++LIBINTL = -L/usr/lib @LIBINTL@
+ LIBINTL_DEP = @LIBINTL_DEP@
+ 
+ # Character encoding conversion library.

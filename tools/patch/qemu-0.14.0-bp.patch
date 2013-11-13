@@ -1,0 +1,26 @@
+diff --git a/target-i386/helper.c b/target-i386/helper.c
+index f0c546d..cdf3b42 100644
+--- a/target-i386/helper.c
++++ b/target-i386/helper.c
+@@ -880,6 +880,8 @@ target_phys_addr_t cpu_get_phys_page_debug(CPUState *env, target_ulong addr)
+     uint32_t page_offset;
+     int page_size;
+ 
++    addr += env->segs[R_DS].base;
++
+     if (env->cr[4] & CR4_PAE_MASK) {
+         target_ulong pdpe_addr;
+         uint64_t pde, pdpe;
+diff --git a/target-i386/translate.c b/target-i386/translate.c
+index c008450..5d9e915 100644
+--- a/target-i386/translate.c
++++ b/target-i386/translate.c
+@@ -7794,7 +7794,7 @@ static inline void gen_intermediate_code_internal(CPUState *env,
+     for(;;) {
+         if (unlikely(!QTAILQ_EMPTY(&env->breakpoints))) {
+             QTAILQ_FOREACH(bp, &env->breakpoints, entry) {
+-                if (bp->pc == pc_ptr &&
++                if (bp->pc == pc_ptr - dc->cs_base &&
+                     !((bp->flags & BP_CPU) && (tb->flags & HF_RF_MASK))) {
+                     gen_debug(dc, pc_ptr - dc->cs_base);
+                     break;

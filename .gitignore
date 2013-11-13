@@ -1,0 +1,7 @@
+cscope.*
+*.o
+*.d
+*.img
+.*.swp
+.todo
+.todo.*
