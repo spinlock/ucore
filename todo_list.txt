@@ -1,0 +1,298 @@
+0. i386 与 x86_64 里面的汇编，都要重新写，两个是不一样的。要一点一点写，保证每个都是正确的！！
+现在比如 __memcpy 这样的代码，明显是 32bit的 x64 下，如果 ecx 比 4G 大的话，直接就是错的。
+
+现在的 i386 主要有两个错误：1. 默认的 max_swap_offset 得到的数据太大了，我们用 kmalloc 得到最大的数据只有 128k，根本放不下，所以 panic 了。所以，正确的做法是，swap 的时候，如果小于多少k，我们就通过 kmalloc 分配，如果大于一个数，我们按照 alloc_page 来分配，这样。
+0. vmware 里面，fs 这个磁盘的 device number 不是 2，而是3.这样 dev_disk0 初始化的时候会出错。
+我们这样，不同的磁盘，创建的时候，我们用第一个扇区来保存一些校验。就像 ucore.img 的第0个扇区后面有 0xEF，我们把 swap、disk0 的第0个扇区都空出来，在最后写上 0xXY 的校验信息，这样就能确定磁盘了。
+x86_64 没测试，应该一样能跑。
+
+通过命令：qemu-img convert -f raw -O vmdk ucore.img ucore.vmdk 可以将 raw 格式的 img 转成 vmware 可识别的格式。
+
+***: 我们在 ucore 里面再写一个 loader 吧，bootloader 负责将 sfs_loader 加载到内存中，然后 sfs_loader 负责将 sfs 磁盘中，ucore/ucore.bin 文件加载到内存中，完成 ucore 的启动，这样就只需要 sfs 和 swap 两块磁盘就可以了。
+
+sfs disk中 disk0 用来放 bootloader，sfs 的元数据 sec1，然后是小的 loader，再然后是元数据。ucore/ 目录下有一个小的 ucore.bin ，创建 sfs 的时候，将 loader 写到 sec1 的适当的位置，loader 是连续存放的。这样 bootloader 从 sec1 就可以读出 loader 的位置，然后加载就行了。loader1 能够读磁盘，找到 sfs 中的root，从中找 ucore/ucore.bin 文件，就 ok 了。全过程都是只读的。
+
+vmware 可以创建串口文件，这样捕获输出就可以了。
+
+1. i386 中，用 gs 保存 per thread 变量的地址，这样增加 pthread 数据结构写起来比较自然
+2. x86_64 中，用 gs 保存 per cpu 变量的地址，而用 fs 保存 pthread 变量的地址。这样，和 i386 的兼容性能够保证。
+
+这点可以用已有的 ucore i386 和 x86_64 来试试看，比如增加 __thread 前缀声明变量，能够看到 i386 代码中，通过 readelf -a 能够多出几个段来。以及一个 R_386_TLS_LE 这东西，然后访问内存的时候，丫用的是 gs + 负偏移量来实现的。需要找个 x86_64 机器再编译一次 ucore，看一下，是不是还是对的。
+他应该是将最高地址放在 gs.base 中，这样访问的时候，通过 gs - offset 来得到实际地址。
+具体的还需要找资料。
+
+3. 增加 percpu 的数据结构，具体的实现方式 bookmark 里面保存了 wiki，而且可以 linux kernel 查看 arch/x86/include/asm/percpu.h 中实现的宏，不是很懂 gs:%P1，应该是说将 constraint 里面的内容当作指针来访问，而 m 则表示 每次都必读，而 p 表示是指针变量，这样可以直接使用指针。看注释的说法是，用 p 可以保证数据被 cache，而 m 表示数据一定会被重新读取。不是很懂，要请教高手。
+就是说，percpu_read 这个宏，实际上用 fs.base 来访问内存了，但是，include/asm-generic/percpu.h 文件里面还提供了 per_cpu(var, cpu) 这个宏，就是说，percpu_var 读取当前 cpu 的 variabile，而 per_cpu 可以根据 cpu 读取其他 core 上的信息。
+
+我的理解是， fs.base 记录了一个 percpu 数据的 (实际偏移 - per_cpu section) 这样，var 通过 fs 访问就得到了实际值；通过 per_cpu 访问数据通过 percpu_offset，这个记录了每个 cpu 的 (实际便宜 - per_cpu section) 的值，这样访问时，根据 per_cpu_var 的地址，加上相应的 offset 就得到了相应的 cpu 的数据。
+效率低一些。
+根据这两个文件来实现 percpu 数据结构。
+pthread 中，fs 的方式也是一样的。
+4. do_exit 中，内核干了什么？
+不用 2.4 中的指针来维护父子关系了。2.6 中用 list_head 链表，效果一样，但是linux 用了 rcu 链表。所以，不好借鉴。他在处理 reparent 过程中，通过 write_lock_irq 锁，其中 write_lock 使得不能有进程创建和删除，那么，也就不会有进程能够修改自己的 task 中的 children 链表，同时关掉 irq，那么这样，访问其他进程的 children 域也是安全的了。
+
+我觉得，linux 进程创建过程，是先锁 tasklist_lock，再在自己的 children 添加，而进程删除也是，先锁 tasklist_lock，进程链表总是正确的。所以，我们在代码中也借鉴这种实现。
+弄一个全局的 tasklist 和 tasklist_lock，同时看看 2.6 内核中分配 pid 是怎么样的？2.4 实在是太难看了。
+
+task 中用 list_entry_t 维护一个完整的 task 列表，同时维护一个完整的红黑树。这样按照红黑树的关系，能够把所有的 task 按照 pid 顺序串联起来。
+每次分配 pid 的时候，维护一个 [pid_next, pid_max]，每次分配，把 pid_next ++ 分配出去，当 pid_next 到达 pid_max 的时候，在红黑树里找比 pid_max 大的最小的节点。如果新的 pid_max 存在，那么按照单链表向后找到第一个空洞，这就是我们想要的位置了。得到一个新的 [pid_next 和 pid_max] 整个过程 disable irq 和 使用 read_lock 就足够了。
+赞一个！！
+
+这样每次进程创建和删除的时候，实际上都是需要修改 task_list，这样，就实现了linux2.6 中的reparent 的策略。
+
+5. page fault 的时候，用 semaphore 的 read/write 方式，这样就能够解决 semaphore 的重入问题了。这样，有内存交互的地方的时候，我们就用 up_read/down_read 操作。linux 内核的方法实在是不太明白。
+可以借鉴 acess_ok 来做初步的检查，然后所有内存的访问，可以不通过 buffer 进行了，所有 access 内存的过程，通过 copy_from_user 和 copy_to_user 来完成，通过汇编，然后出现 page fault 的时候，可以通过设置寄存器状态来完成返回值的控制。
+这样就能够避免每次内存检查的麻烦了。
+赞一个！！
+
+内核里面有实现，read 的 count 是 1，write 的 count 是非常非常大的整数。
+
+6. futex 的实现相对麻烦。
+看很多版本，简单的版本是：
+只有 lock，unlock 状态，lock 失败了，futex_wait(&wait, 1)，unlock 无论如何都 futex_wake(&wait, 1)
+其中 futex_wait(&wait, 1) 表示只有 wait == 1 才 wait， futex_wake 表示 wait != 0 则 wakeup 1 个进程。
+复杂的版本是：
+http://bartoszmilewski.wordpress.com/2008/09/01/thin-lock-vs-futex/
+这个版本相对好一些，能够避免单独的时候进出内核的次数。
+
+用户态 还有一个 mutex，就是只有一个 01 变量的 semaphore 吧。
+我们再实现一个 mutex 吧，不同的是 mutex 需要记录 owner，这个可以在用户态实现了。
+http://www.yuanma.org/data/2008/0612/article_3076.htm
+futex 也是 01 只是 fast user mode mutex 的实现，所以，肯定是在用户态实现的 owner 的记录。
+
+7. kernel 里面添加 zero page，对于所有 bss 段的内容，添加在 zero page 中，这样可以减少进程创建的代价。单独放在一个 proj 里面，这样能够比较大的 static 变量对内存的需求。
+
+8. 因为 kernbase 的缘故，代码会出现 R_X86_64_32S 的错误。因为 kernbase 与 0xFFF…FFF 的差要比 32 寻址差太多了。所以，应该将 kernbase 分成两部分，一部分，用 0xFFFF800000000000 来做内存映射，而另一部分 0xFFFFFFFF80000000 用来做内核代码映射，这样就能做到寻址正常了。
+
+用 kmembase, kmemsize, kmemtop 和 kernbase
+参见讨论 http://forum.osdev.org/viewtopic.php?f=1&t=22121&start=0
+
+原来代码实现的问题：i386, boot loader 建立正常的页表映射，entry.S 建立 -KERNBASE 的页表映射，然后就进内核了；x86_64，boot loader 建立正常的页表映射，entry32.S 代码也是映射 0x200000 上的，所以物理地址和虚拟地址是相同的，然后 entry32.S 再建立双映射的页表，和打开 long mode，然后跳转过去。于是 i386 进入Ｃ代码时，虚拟地址和物理地址 offset 是 -KERNBASE，x86_64 里面 offset 是 0。不匹配。
+所以下面的改进方法是，bootloader 建立正确的映射，完成内存拷贝，然后跳转到 entry.S 中，entry.S 是按照正常地址编址的，然后对于 i386，entry.S 建立双映射，完成跳转；对于 x86_64，entry.S 完成打开 long mode 的操作，然后建立双映射，跳转到 entry64.S 中。entry32.S 和 entry64.S 完成 esp/ebp 和 rsp/rbp 的分配和设置，跳转到 C 代码。
+entry.S 里面，建立页表的函数写在 setup32.S 和 setup64.S 里面，分别建立不同的页表。
+这样，在 C 代码里面，两份代码就是一致的了。
+
+同时，对于内存分配，设计几个宏。KMAPBASE KMAPSIZE 表示内存映射的范围，KERNBASE 和 KERNSIZE 表示内核代码的范围。
+对于 i386 而言，KERNBASE~KERNTOP 在 KMAPBASE~KMAPTOP 是同一个东西，这样，只要根据 end 的位置向上取就能取到 freemem 的位置了；
+对于 x86_64 而言，KERNBASE 放在最后 2G，KMAPBASE 放在最下面。那么 KMAPOFFSET=KMAPBASE-KERNBASE，end 需要加上这个偏移量，才能取到相应的 freemem 的位置。
+然后 i386 只要 bootmap_segment KMAPBASE~KMAPTOP 就足够了，而 x86-64 需要 map 这两个地方。
+
+x86_64 detect 比如 npages，那么 map 从 KMAPBASE 到 KMAPBASE + npages * PGSIZE 的地址空间；然后再 map 从 KERNTOP ~ end 的地址空间。
+
+9. kernel 与 user 虽然用相同的 lib 库，但是应该有不同的编译选项，所以还是应该分开来编译。放在 misc 目录下面，编译出来的代码，应该各一份。
+应该每个目录下面都有一个 Makefile，像 linux kernel 一样，有 obj-y，不同的是，我们还是支持自动寻找想要的文件。
+Makefile 里面有一个 ignore 选项，src-y 是目标文件列表，ignore-y 是忽略文件列表，list-y 是自动查找到文件列表，{list-y - ignore-y} U {src-y} 是编译的文件列表，生成的文件放到 output/ 相应的目录下面，并且 cflags-file 是默认的编译选项，cflags-file 如果定义了则按照定义的结果来，否则，按照默认的结果来。比如 cflags-mmap.c += -O2 或者 cflags-mmap.c = -O2 是不一样的。
+
+output 目录下面，有分类，obj/ 表示生成的 .o .d 文件，bin/ 表示生成的 kernel、 user binary 文件， img/ 表示生成的镜像文件，sym/ 表示生成的符号表 和反汇编的结果。
+
+还有，.S 文件里面的页表和 栈，都用 bss 段，别用 data 段，这样能够减少空间。
+
+10. 64bit kernel 编译选项，再参考 http://wiki.osdev.org/Creating_a_64-bit_kernel
+ld 选项，-z max-page-size=0x1000 可以让 kernel 和 用户程序都足够小，因为默认的 64bit 代码用的是2M的页，所以默认的对齐也是 2M 的，可以参考 http://wiki.osdev.org/Creating_a_64-bit_kernel#My_kernel_is_way_too_big.21.21.21 提到的，上面提供了3个可能的 solutions参见 My kernel is way too big!!!.
+
+这个页面还提到了内核代码的映射地址。linux 默认是将最后的2g映射到0地址的2g上。而对于超过2g 的映射，则用临时映射。而我们，直接将地址空间的一半拿来做kernel，所以，不存在这样的情况。所以我们有足够的地址空间用来直接map内存。
+
+// 我理解，内核里面只要不是 copy_*_user 函数出现的 page fault 都应该算 panic，但是，我们放宽要求。
+如果能够 handle 的 page fault 就按照 warn 打出来，否则就直接 panic。
+
+11. 64bit kernel 里面，对于bootmap_segment 过程，对于大页，直接用2M的页表，不足的再用 4k 的页表，这样能够节省物理页。而对用户程序页表，则直接使用 4k 页表，因为这样省事儿，对于bss段的页对齐数据，则用zero page 来映射。这样 load_icode 代码相对麻烦一点，但是效率高。
+
+12. 内核编译选项我们用 -Wall -Werror 来编译，这样禁止所有的错误和警告。
+*.ld 里删掉所有没有用的段，比如 .debug_* 之类的。
+
+13. gcc 自定义 section:
+ extern void foobar(void) __attribute__((section("bar")));
+http://stackoverflow.com/questions/3516398/define-a-sections-in-c-code-gcc
+
+汇编代码的 section 定义：http://tigcc.ticalc.org/doc/gnuasm.html#SEC119
+http://tigcc.ticalc.org/doc/gnuasm.html#SEC39
+就好了
+
+
+gnu 汇编：http://sources.redhat.com/binutils/docs-2.12/as.info/ 和 http://tigcc.ticalc.org/doc/gnuasm.html
+主要看 elf version 的flag说明
+http://sourceware.org/binutils/docs/as/Section.html
+
+主要参考了：http://sourceware.org/binutils/docs/as/Section.html 在 proj11 里面成功添加了自定义的 section，并且将系统启动起来了。具体的参见  entry_section.patch 的内容。
+多次页表的意思就是将整个 kernel 的地址分成两部分。一部分是低地址，logic address = virtual address，这部分代码用来建立新的页表，然后跳转到高地址上执行，就想 pmm_init 里面的函数一样，不过这部分代码现在改在汇编代码里面执行了。我们也可以用 C 代码来完成这部分，比如写 setup.c 然后里面用 __attribute__(section("entry32.text")) 来完成函数段的声明。然后传递的参数，比如 entry64.S 就传递3级页表，而 entry32.S 就传递2级页表。在这里面完成这些页表的初始化工作。这部分代码需要单独放在一个目录下面，不能和 kernel 放在一起了，而且也不能引用其他头文件，因为地址空间不对。可以在这部分里面，自己再用汇编写一遍 memset。
+
+// 关于 allocatable 的 section 的说明：http://docs.redhat.com/docs/en-US/Red_Hat_Enterprise_Linux/4/html/Using_ld_the_GNU_Linker/scripts.html
+就是说 bss 是 allocatable 的。其次，bootloader 也应该负责清理 bss section。目前 boot loader 没清理，而是 entry 自己清理的。
+http://old.nabble.com/GCC%3A-Diffrence-b-w-lodable---allocatable-sections---td32316173.html
+所以，我们就按照默认的编一起出来的 .o 文件，通过 readelf -S 看一下每个段的权限，然后自己设置一下不同 section 的权限好了。
+
+// 算了，还是不要在这个地方 C 和 S 混写了，比较乱，容易出错。64 bit remap 2G，32 bit remap 16M 就好了。通过 rep movsb 指令，可以很方便 remap 这么多 entry 的。然后起来之后，再 invall tlb 来实现低地址 tlb 的释放。太爽了！！
+
+14. lock prefix
+对于 lock prefix 前缀的指令，也是串行的，相当于用了 mfence http://blog.csdn.net/erazy0/article/details/6210569
+
+intel ia32-3a 7.2.4 里面提到了，改变 memory ordering model 的方法，其中：
+1. The I/O instructions, locking instructions, the LOCK prefix, and serializing instructions force stronger ordering on the processor. 所以 spin lock 里面用到的 lock prefix 就是一个很强的 mfence 了。哦，很nb了。
+
+15. list, hlist 链表
+
+16. 看 浮点寄存器 page 115 以及 dma 的初始化。要 查看 i386 和 x86_64 两种不同的 cpu 是怎么硬件结构，看看是否支持 SSE 和 SSE2 扩展功能。然后实现 kernel_fpu_begin/end 函数，然后 schedule 地方增加 __preempt_counter 确保 schedule 地方 preempt 计数器时钟为 0.
+
+Page 117
+
+kernel_fpu_begin/end 以及其他关闭中断的地方都确保计数器是 0，比如 local_irq_save, local_irq_store 都修改计数器。
+
+clone 的时候，如果有必要，则需要调用 fpu_save 把当前 process 用到的 fpu 寄存器，然后将其复制到 child 进程的 task 的 flu 域上去。参见 Page 123
+
+17. switch_to 函数运行之前一定是 irq disabled 的，运行之后，一定是 irq_enabled 的。
+在 kernel 里面，调用 switch_to 之前用 assert 进行断言。
+
+18. linux 里面，clone 实际上将 fn 等参数放在 stack 上，然后有用户程序自己完成 thread 函数调用。也这么搞。
+只有 CLONE_SETTLS 才设置 tis 段。有两个系统调用 set_thread_area 和 get_thread_area 完成 tis 段的设置。
+
+19. 通过 clone_vfork + semaphore 实现 vfork，具体的就是在 task_struct 里面增加一个 sem 域，vfork 的时候 down，exec 之后调用 up，完成。
+task_uninterrupt 和 task_interrupt 分别标示 task 是否可以被直接 wakeup 起来，对于 vfork，调用的时候 kmalloc 一个 semaphore，等待 exec，完成之后，无论是否成功负责释放 sem，如果设置成 interrupt 的，那么 sem 应该有一个引用计数，如果设置成 uninterrupt 的 sem 则没有应用计数。
+
+因为父子进程是共享函数栈以及 mm 的，所以，应该是 father 不能在 child 运行 exec 之前被 wakeup，所以，应该设置成 uninterrupt 的状态。
+
+20. 每个 task 都有一个 ref counter；进程创建和删除的时候，都去尝试拿 global task table 的 rowlock，同时关闭 irq 中断。init proc 负责周期的 check 一下所有的 child task，比如周期是 100 ticks
+
+不对，再想想。
+
+i386 中 switch_to 应该用 attribute((regparm(3)))，这样能够通过寄存器传递参数了。更快。
+clone/exit 的时候，以及修改 thread group 的时候，统统获取 write_lock，然后查询 的时候统统获取 read_lock 并获得相应的 ref counter.
+
+clone/fork 的时候，先通过 read_lock 得到相应的 pid，然后通过 alloc_task 得到相应的 task structure, 并初始化各种各种的信息；最后一步，将 ref counter 设置成 2，表示自己以及 parent 各有一个 ref counter。
+
+exit 的时候，因为要退出，所以先 exit 所有该推出的数据结构，但是 task_structure 以及 stack 没有办法退出，必须由 wait 或者内核回收。
+所以: 
+step1. exit 所有该退出的资源
+step2. 获取 write_lock
+step3. unlink 所有该 unlink 的链表，并且如果有 children，将他们的 parent 设置成同组的线程，如果没有，则将他们设置成 init 进程。
+step4. dec ref counter，标示 parent 已经不要了该 ref 了。
+step5. unlock write_lock 
+step6. 操作 exit_wait_queue，在 lock 的保护下，此时，因为已经从 global list 上取下了，就不会有进程再加入到该 queue 上了，但是可能存在 timeout 或者被删除的进程。所以用 lock 保护起来。
+如果 exit_wait_queue 进程是 empty 的，说明没有进程在等待他，此时必然有 ref counter == 1，那么此时设置成 exit_zombie，schedule 的时候，释放该进程的 task 和 stack；
+如果 exit_wait_queue 不是 empty 的，那么必然有，其他进程正持有该进程，那么将当前设置成 exit_dead。（无论如何，必须有在 exit_wait_queue 上的进程已经获得了 ref counter，它必须释放相应的 ref counter，也就是说，只要最后将 ref counter 减少到 0 的进程亲自释放就好了。）
+所以不用设置 exit_dead，全是 exit_zombie 就好了。
+在 lock 的保护下，将所有队列中的进程全都 wakeup 起来，然后，将当前进程设置成 exit_zombie，调用 schedule 的时候，负责 dec ref counter，那么这样，如果到 0 了，直接释放就好了。
+step6.* 在 lock 的保护下，先将自己的状态设置成 exit_zombie，然后将队列中的所有进程都 wakeup 起来。
+
+wait 操作的时候：将 wait 过程分成两部分，第一部分，找到 pid 所对应的 task，或者任意子进程，并增加其 ref counter，在 read_lock 的保护下，然后。 step1. 获取 read_lock
+step2. 找到相应的 task，并增加引用计数。因为已经获取到 task 引用计数，所以进程跑不掉。
+step3. 释放 read_lock
+step4. 将自己设置成 task_interrupt 状态或者 uninterrupt 根据 timeout 选项。
+step5. 如果有 timeout 选项，将自己加入到 timeout 链表中。
+step6. 因为进程跑不掉，所以获取 lock。然后判断如果进程已经是 zombie的，说明进程已经先退出了。所以，直接退出，否则，将自己加入到链表中。
+step7. volatile 的读取当前进程的状态 （status 变量应该本身就是 volatile 的才对），如果当前进程状态不是 running 的，那么直接 call schedule 好了。
+step8. 如果 timeout 不是空，那么，将自己从 timeout 队列中去掉。
+step9. 如果 还在 exit_wait_queue 中，那么在 lock 的保护下，从 exit_wait_queue 中将自己取下来。step8 和 step9 的存在，目的在检测进程是不是被以外的唤醒。
+step10. 如果 timeout 本身不是空的，但是的确已经 timeout 了，那么 error 是 timeout 的。如果不是自己把自己从 exit queue 中踢掉的，那么则返回正确的 返回值，否则就是被踢掉的 error code。task_struct 里面添加一个 interrupt_code，表示被打断的值。这个值只用来作为被以外打断的结果，exit 的结果，放在 exit_wait_queue 中。 
+step11. 最后，释放刚刚那个引用计数。
+
+比如这么写：
+typedef struct {
+	list_entry_t node;
+	struct task_struct *task;
+	union {
+		long wakeup_code;
+		long wakeup_timeout;
+		struct {
+		} blabla;
+	};
+} wait_t;
+对于不同类型的操作，就用不同类型的结果，timeout 里面，用 wakeup_timeout 表示等待时间或者唤醒的时间等等。
+
+所有的操作，都先不考虑 timeout 这个情况，然后某个版本开始，增加一个 timeout 的操作。
+
+错了！每个进程只能 wait 自己的 子进程，同样的 通过 read_lock 得到引用计数，然后判断其 parent 是不是当前进程，如果不是，直接放弃。如果是，那么直接 wait 就可以了。
+进程退出的时候，不进行 unlink 的操作，而是由 parent 来完成的。
+将 child 列表分成两组，一组是 running 的，一组是 zombie 的，这样，parent 只要周期的 wait zombie 进程组就可以了。然后只要在 task_struct 里面设置一个 exit_code，然后每一个 wait 的进程直接读 exit_code 就可以了。
+exit 的时候，进程 hold 住 write lock，然后将自己从 parent 的 children 链表移动到 zombie 链表中，所有操作都完成之后，通过 schedule 来释放自己的 ref counter。这时候，无论父进程是否释放对自己的 ref counter，都能保证正确。就是说，自己对自己的 ref counter 一定要保证当自己都不在执行的时候，再释放。
+并且只有保证进程真正的被 free 以后，才能从 global list 中移除掉，否者 pid 可能被直接分配给其他进程了。因此，unlink 操作只能等真的 put_task 的时候才能够释放。
+
+21. idt_table 用的是 __page_aligned_data 来声明的。
+__page_aligned_data 声明在 linkage.h，然后，__section(.data..page_aligned) __aligned(PAGE_SIZE)
+就是放在 data 段的。
+__page_aligned_bss 相应的，放在 bss 段，我们不需要这么详细的 bss 或者 data 段，直接用 page_aligned 就好了。用 linux 中的方法，设置 trap handler。
+
+22. 为了安全，所有的中断进入的时候，都是关闭中断的。然后定义一个 desc_t 数据结构，表示中断处理函数地址，以及中断处理函数是否打开中断。
+从中断处理函数返回的时候，先关闭中断 cli，因为中断处理函数会恢复 eflags，所以没所谓。
+
+23. 看了 linux 内核的中断向量表。明确的，只有中断门才屏蔽中断，而陷阱门和调用门都是不屏蔽中断的。所以，要参考 linux kernel 里面怎么设置的默认32个中断，以及 apic 和 irq 的中断门的。
+
+24. 还像默认的 ucore 里面，插入很多 check 函数，但是不同的 lab 用不同的 check 函数，比如 定义 check_lab1 … check_lab2 ，但是用宏
+#ifdef __check_lab6
+#define chekc_labx check_lab2
+#endif
+用这样方法来绕过兼容问题。
+
+25. 对于不同级别的保护方式，参考 understanding linux kernel 的 220 页，中断处理过程需要屏蔽中断，中断处理过程可能访问到的数据，需要用局部停止中断的方式来完成。
+然后 thread_info 里面，需要记录拿到 lock 的次数，以及实现 local_irq_push 和 local_irq_pop 的计数，
+就是说，irq push/pop 分成两个级别，一个是 spin_lock_irq ，这个默认调用的是 local_irq_push/pop，其将 irq status 保存在 thread_info 中，并维护引用计数。
+在 schedule 函数中，需要 check lock 的计数以及 irq 的计数，只有两个都是 0 才能实现 schedule，否则则是一个 bug。
+
+26. cpu_relax 函数 rename 成 cpu_rlx，相对的，有一个 cpu_hlt 函数，一个是 通过 pause 指令，另一个是通过 hlt 指令，前者不省电，后者省电。
+
+27. smp 里面，每个 cpu 都有一个独立的 time queue 来维护 sleep 的队列，每个 local 的 irq 只影响自己所在的 time queue。好主意！！
+
+28. 仿照 Page 181 里面的 PG_xyz flag 来设置 struct Page 里面的 flag。
+29. 写 memory init 的时候，要参考 第六章 的内容，比如 mem_map 数组，以及  MAP_NR 这种宏的定义，比如 __pa 等等，以前 va2pa 太土了。
+里面写了 linux 里面 mem_init 函数是怎么初始化的。要学习 linux 的 memory 初始化的方法！对 init 过程 kernel 一个 page 一个 page 的 free，等于用 buddy 的 free 过程来构造。而不是像我那样正向的构造。
+
+30. get_page 和 free_page 在维护 page 的 ref counter，当 counter 到 0 的时候，才真正释放页框。free_pages 释放的是连续的 2^order 的页框。而 __free_pages 释放的是单个页。可以通过对 buddy 的封装设定这个。最后调用 free_pages_ok 来完成强制的释放。linux buddy 分配从 1 到 512 的连续页框。
+另外 gfp_mask 里面区分 dam 和 wait 标记。 
+
+31. 内存管理过程中，设计要考虑申请的内存的数量不能够超过 物理页和交换页 的总和。比如如果用光了的话，可以直接杀掉进程，而不是要等 kswapd 傻乎乎的释放失败。
+32. address_space 中，如果需要使用一个页，往往是直接添加到 address space 中，并且将 page 设置成 locked。访问页的过程中，如果发现页已经是 locked 的了，这个时候需要 wait_on_bit 来等待页 unlock。并且等待回来，页可能被释放掉了？（难道不是等待的过程中，先 acquire 一个 ref counter，然后才开始等待的么？）。看 ulk Page 604/603 里面提到的 wait_on_bit 具体是怎么实现的。
+
+33. 进程调度里面，wakeup 函数比较复杂，我们可以记录每个进程所在的 run queue，进程的 run_queue 只要不是 dead 状态，都是有效地。并且只能够在 load_balance 的过程中才能被修改。那么，wakeup 的时候，可以先锁住 target 的 run queue，然后将其插入到原来的 run queue 的 wakeup list 上。这样，即便是，某个进程刚刚从 running 状态变成waiting状态，也保证他不会出现在 run queue中。每次 schedule 的时候，检查当前 run queue的wakeup list。如果 wait list 不是空的，那么再将进程放入到自己的run queue上。也就是说，对 run queue 的修改，只能是确定的并且尚未执行的 runnable 的程序。
+
+34. address space 中也需要检查页是不是 dirty 的。我们这样设计，在每个 node 中记录node 下所有节点的 dirty page 的总数。这样，检查是否有 dirty page 的时候，只需要 check 很少节点就足够了。而不需要便利全部节点。
+35. address space 中用什么样的 lock 呢？以前 share memory 中用的是 semaphore，太重了。是不是考虑换成 spin lock 呢？
+
+36. page fault handler 里面，最后一级，handle_pte_fault 将 page fault 分成三个函数，分别是 do_no_page, do_file_page 和 do_swap_page，这样每个函数处理自己的，避免混在一起。
+
+37. syscall 里面，自动打开 irq，如果通过 gdt 实现，则这么做，否则如果通过 sysenter 进入的，则手动通过 sti 打开中断。ulk Page 406 里面，参考参考。
+38. 问题，linux 处理 page fault 的时候，check 了 eflags & 0x00020200，如果满足则打开 irq 中断。这是为什么？我猜想，本身 page fault handler 在 gdt 表中是关闭中断的。但是如果产生 page fault 的代码是允许中断的，则处理 page fault 的代码也应该相应的打开中断。
+
+39. 的 semaphore 函数也应该提供 read/write 这样的操作，同时提供 try down 这样的函数。
+40. 在中断处理函数中，增加计数器，这样能够知道嵌套处理的层数。这样能够用来调试错误。适当的，按照原来的写法，可以根据链表打印出嵌套的中断处理过程以及每个中断的参数等等。提供这样的函数。
+41. 内存管理过程提供对 stack 的特殊保护，即对 stack 的最后一个页增加保护。如果 touch 到最后一个页，则尝试增长堆栈。比如如果小于2M，则将堆栈翻倍，否则将堆栈增长2M。
+42. 将 bootloader 代码拆分成两个部分，分别是 bootsec 和 loader，前者在单独的一个目录下，后者在 ucore 的目录下，同时还可能使用 ucore 下面的 share 的目录等等。同时控制 loader 代码的大小。使得不能超过 1M，因为 loader 默认被加载到 1M~2M 的地址上，而 ucore 被加载到 2M 到更高的地址。
+43. 修养 Page 123 里面，对于 library，每个函数一个文件，可以保证链接的时候，代码最小。因为是按照文件来链接的。
+44. -fno-builtin 是必须的，这样能够保证 printf() 这样的函数不被替换成 puts。虽然我们还是要实现 puts 这样的函数的。
+45. link 脚本使用 lds 作为扩展名，而不是 ld，参见 /usr/lib/ldscripts 样例。ld script 中，用 STARTUP(filename) 保证 filename 是第一个链接的。用来修复 bootsec 的错误。
+46. section 的时候，要写 .= start + SIZEOF_HEADERS 这样保证 header 能够先加载到内存中。原来的代码怎么写的？ 看看原来 loader 是怎么读取 header，并把他们放到内存中的。
+47. 每个 thread 都维护自己的 malloc 状态，同时有一个总的 malloc 状态。总的状态在使用的时候，需要保证 fork 的正确，所以需要对 kfork 上 readlock。malloc 里面对不同 size 像 buddy 一样，但对于超大的，则维护一个超大的链表记好了。
+48. asmlinkage 宏是 __attribute__((regparm(0)))，就是说，不通过寄存器传递参数。那么对于 x86_64 是怎么样的？没必要。我们通过统一的入口，然后通过函数调用的方式进行系统调用的分发。不是汇编，所以没必要这么高。
+49. 对于 sys call 实现 syscall_fast 和 syscall_slow 两种，分别是 sys enter 和 sys int 两种。
+50. 编译过程 gcc -E 输出 x.i 文件，-S 输出 .asm 文件 -c 输出 .o 文件。 -fno-stack-protector 关闭堆栈保护。-fdata-sections：将全局、静态变量放到独立的数据段。比较 gcc -E 与 gcc -S 和 objdump 的区别。Page 453 有分析。
+51. 进程 设置 stack 的时候，应该设置成 esp-1，因为只有这样，获取 current 的时候才是当前进程！！！！！！很重要！！！！Page 91有分析。
+52. Page 173 有 IPI 的实现分析。
+53. 对于 IRQ 的设置，Page 157 有分析。对于 smp，则通过 setup_io_apic_irq 来初始化 apic 接口。
+
+ 1.buddy alloc_pages calls buddy_free not free
+ 2.atomic.h 里面实现 mb：在适当的位置添加 mb 操作，参见 linux kenrel 里面的 spinlock 和 irq_disable 实现。
+ 3.semu_undo 不用链表，改用固定大小的数组，并且 semu_id 给一个 base 比如 0x40000000。
+ 4.添加 sysenter 和 sysexit 类型的系统调用，根据 sysenter 和 sysexit 重新设计 int 80 的段入口。
+ 5.printk, printf 区分开
+ 6.不返回地址，返回 fd
+ 7.重写 测试 bash，每个测试结果都放在一个独立的输出文件下面，给出完整的测试命令，进行匹配，便于查错。
+ 8.x86_64 的 mp 化: 增加 spinlock，增加 load balance，按照 linux 的调度器实现。
+ 9.x86_64 里面，多核化以后，按照 linux 的方式实现 current，并增加栈溢出的保护。
+10.Makefile 学习 ucore-mp64 的 makefile 写法
+11.is_panic 应该是 volatile 的
+12.add futex 实现
+13.buddy 保证地址空间的连续性：buddy 分配的地址应该是 2指数 对齐的。
+14.syscall puts：添加 syscall
+15.use __asm__ register instead of %rdi for syscall：按照 linux 系统调用的写法。
+16.file_struct 放在 pcb 里面，包含指向 fd 表的指针；而不是现在 file_struct 和 fd 表都通过 kmalloc 得到。
+17.proc_struct 改成 task_struct，和 linux kernel 相同的名字比较好。
+18.规范sfs 里面的参数命名
+19.pte 类型
+20.inline 宏
+21.swap 算法
+22.fd 表采用宏定义大小。
+23.likely, unlikely
+24.memory barrier 作用，讲清楚了
+25.调整 syscall 参数，和 unix 相似就好
+26.sleep -1 表示一直sleep，所以不用放到 timer queue 上
+27.exec 改名为 execv 比较合适
+28.linux friendly shell: 1. 查找可执行文件时，从 PATH 路径下查找；如果命令中出现 / 则认为是路径，而不从 PATH 下查找。2.
+    处理 && 和 || 操作
