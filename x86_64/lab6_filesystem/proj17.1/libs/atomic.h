@@ -156,7 +156,7 @@ atomic_sub_return(atomic_t *v, int i) {
  * */
 static __always_inline void
 set_bit(int nr, volatile void *addr) {
-    asm volatile ("btsl %1, %0" :"=m" (*(volatile long *)addr) : "Ir" (nr));
+    asm volatile ("btsl %1, %0" :"=m" (*(volatile int *)addr) : "Ir" (nr));
 }
 
 /* *
@@ -166,7 +166,7 @@ set_bit(int nr, volatile void *addr) {
  * */
 static __always_inline void
 clear_bit(int nr, volatile void *addr) {
-    asm volatile ("btrl %1, %0" :"=m" (*(volatile long *)addr) : "Ir" (nr));
+    asm volatile ("btrl %1, %0" :"=m" (*(volatile int *)addr) : "Ir" (nr));
 }
 
 /* *
@@ -176,7 +176,7 @@ clear_bit(int nr, volatile void *addr) {
  * */
 static __always_inline void
 change_bit(int nr, volatile void *addr) {
-    asm volatile ("btcl %1, %0" :"=m" (*(volatile long *)addr) : "Ir" (nr));
+    asm volatile ("btcl %1, %0" :"=m" (*(volatile int *)addr) : "Ir" (nr));
 }
 
 /* *
@@ -187,7 +187,7 @@ change_bit(int nr, volatile void *addr) {
 static __always_inline bool
 test_and_set_bit(int nr, volatile void *addr) {
     int oldbit;
-    asm volatile ("btsl %2, %1; sbbl %0, %0" : "=r" (oldbit), "=m" (*(volatile long *)addr) : "Ir" (nr) : "memory");
+    asm volatile ("btsl %2, %1; sbbl %0, %0" : "=r" (oldbit), "=m" (*(volatile int *)addr) : "Ir" (nr) : "memory");
     return oldbit != 0;
 }
 
@@ -199,7 +199,7 @@ test_and_set_bit(int nr, volatile void *addr) {
 static __always_inline bool
 test_and_clear_bit(int nr, volatile void *addr) {
     int oldbit;
-    asm volatile ("btrl %2, %1; sbbl %0, %0" : "=r" (oldbit), "=m" (*(volatile long *)addr) : "Ir" (nr) : "memory");
+    asm volatile ("btrl %2, %1; sbbl %0, %0" : "=r" (oldbit), "=m" (*(volatile int *)addr) : "Ir" (nr) : "memory");
     return oldbit != 0;
 }
 
@@ -211,7 +211,7 @@ test_and_clear_bit(int nr, volatile void *addr) {
 static __always_inline bool
 test_and_change_bit(int nr, volatile void *addr) {
     int oldbit;
-    asm volatile ("btcl %2, %1; sbbl %0, %0" : "=r" (oldbit), "=m" (*(volatile long *)addr) : "Ir" (nr) : "memory");
+    asm volatile ("btcl %2, %1; sbbl %0, %0" : "=r" (oldbit), "=m" (*(volatile int *)addr) : "Ir" (nr) : "memory");
     return oldbit != 0;
 }
 
@@ -223,7 +223,7 @@ test_and_change_bit(int nr, volatile void *addr) {
 static __always_inline bool
 test_bit(int nr, volatile void *addr) {
     int oldbit;
-    asm volatile ("btl %2, %1; sbbl %0,%0" : "=r" (oldbit) : "m" (*(volatile long *)addr), "Ir" (nr));
+    asm volatile ("btl %2, %1; sbbl %0,%0" : "=r" (oldbit) : "m" (*(volatile int *)addr), "Ir" (nr));
     return oldbit != 0;
 }
 
