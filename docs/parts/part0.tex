@@ -1,0 +1,1479 @@
+\part{实验准备}
+
+\section*{\HandRight\hspace{0.5em}实验目的}
+\begin{minipage}[t]{0.8\textwidth}
+\begin{heiti}
+\begin{itemize}
+\renewcommand\labelitemi{\FiveStarShadow}
+    \item \begin{large} 了解操作系统开发实验环境 \end{large}
+    \item \begin{large} 熟悉命令行方式的编译、调试工程 \end{large}
+    \item \begin{large} 掌握基于硬件模拟器的调试技术 \end{large}
+    \item \begin{large} 了解 x86 硬件结构以及 gcc 内联汇编 \end{large}
+\end{itemize}
+\end{heiti}
+\end{minipage}
+
+\chapter{准备知识}
+
+\section{了解 OS 实验}
+
+\paragraph{写一个操作系统很困难吗？}
+别被现在上百万行的 Linux 和 Windows 操作系统吓倒。
+当年 Thompson 乘他老婆带着小孩度假留他一人在家时，写了 Unix；
+当年 Linus 还是一个21岁大学生时完成了 Linux 雏形。
+站在这些巨人的肩膀上，我们能否也尝试一下做 “巨人” 的滋味呢？
+
+MIT 的 Frans Kaashoek 等在2006年参考 PDP-11 上的 UNIX Version 6
+写了一个可在 x86 上跑的操作系统 xv6（基于MIT License），
+用于学生学习操作系统。
+我们可以站在他们的肩膀上，基于 xv6 的设计，
+尝试着一步一步完成一个从 “空空如也” 到 “五脏俱全” 的 “麻雀” 操作系统 \cndash \ucore，
+此 “麻雀” 包含虚存管理、进程管理、处理器调度、同步互斥、进程间通信、文件系统等主要内核功能，
+总的内核代码（C + asm）会尽量控制在一个比较小的规模，比如 7k 行以内。
+充分体现了 “小而全” 的指导思想。
+
+\ucore 的运行环境可以是真实的 x86 计算机，
+不过考虑到调试和开发的方便，
+我们可采用 x86 模拟器，比如 Qemu、Bochs 等，
+或 x86 虚拟运行环境，比如 VirtualBox、VMware Player等。
+\ucore 的开发环境主要是 GCC 中的 gcc、gas、ld 和 make 等命令行工具，
+也可采用集成了这些工具的 IDE 开发环境 Eclipse-CDT。
+
+那我们准备如何一步一步实现 \ucore 呢？
+我们可以按照下面的步骤来完成：
+\begin{small}
+\begin{enumerate}[label=\arabic*)]
+    \item %
+        启动操作系统的 bootloader，%
+        用于了解操作系统启动前的状态和要做的准备工作，%
+        了解运行操作系统的硬件支持，操作系统如何加载到内存中，%
+        理解两类中断 \cndash “外设中断”，“陷阱中断”，内核态和用户态的区别；
+    \item %
+        内存管理子系统，%
+        用于理解 x86 分段/分页模式，%
+        了解操作系统如何管理物理内存和虚存、页表管理、一类中断 \cndash “故障中断”、%
+        缺页故障处理、基于页的内存替换；
+    \item %
+        进程管理子系统，%
+        用于了解进程创建、执行、切换和结束的动态管理过程，%
+        了解在用户态通过系统调用得到内核态的内核服务的过程；
+    \item %
+        处理器调度子系统，%
+        用于理解操作系统的调度过程和调度算法；
+    \item %
+        同步互斥子系统，%
+        用于了解同步互斥的具体实现以及对系统性能的影响，%
+        研究死锁产生的原因，以及如何避免死锁；
+    \item %
+        进程间通信子系统，%
+        用于了解进程间如何进行信息交换和共享；
+    \item %
+        文件系统，%
+        用于了解文件系统的具体实现，与进程管理等的关系，%
+        了解缓存对操作系统IO访问的性能改进，%
+        以及虚拟文件系统（VFS）、buffer cache 和 disk driver之间的关系。
+    \item %
+        网络协议栈，%
+        了解网卡驱动、TCP/IP协议栈实现和Web应用。
+\end{enumerate}
+\end{small}
+
+其中每个开发步骤都是建立在上一个步骤之上的，
+就像搭积木，从一个一个小木块，最终搭出来一个小房子。
+在搭房子的过程中，完成从理解操作系统原理到实践操作系统设计与实现的探索过程。
+这个房子最终的建筑架构和建设进度如下图所示：
+
+\begin{small}
+\begin{figure}[h]
+\centering
+\scalebox{0.95}{
+    \begin{tikzpicture}[x=0.05\textwidth,y=1em,auto,start chain=going below]
+        \tikzstyle{every node}=[fill=none,rectangle,minimum height=18pt,draw,node distance=0pt,inner sep=0pt]
+    	\tikzstyle{note}=[draw=none,above,opaque,fill=none]
+        \tikzstyle{hide}=[note,minimum width=0pt]
+
+        \tikzstyle{step0}=[fill=Red]
+        \tikzstyle{step1}=[fill=DeepPink]
+        \tikzstyle{step2}=[fill=Orange]
+        \tikzstyle{step3}=[fill=Yellow]
+        \tikzstyle{step4}=[fill=LawnGreen]
+        \tikzstyle{step5}=[fill=Green3]
+        \tikzstyle{step6}=[fill=PowderBlue]
+        \tikzstyle{step7}=[fill=Cyan]
+        \tikzstyle{step8}=[fill=DodgerBlue]
+        \tikzstyle{step9}=[fill=DarkGrey]
+
+        \node[note] (labelx) at (-9,-7) {实验进度};
+
+        {[start chain=subchainx going below]
+            \draw let \p1=(labelx.north) in (\x1,\y1-6pt) %
+                node[hide,on chain,anchor=north west] (hidex) {}
+                [->] (\x1-20pt,\y1-20pt) -- +(0,-193pt);
+            \foreach \i in {0,...,9} {
+                \node[step\i,on chain] (color\i) {\makebox[0.05\textwidth]{}};
+            }
+        }
+
+        \node (label0) at (0,0) {\makebox[0.4\textwidth]{各种用户态应用和测试程序}};
+        \node[below=3pt of label0] (label1) {\makebox[0.7\textwidth]{用户态函数库}};
+        \node[note,right=1em of label1] (label2) {用户态};
+
+        \draw[-] let \p1=(label2.south) in %
+            (-10,\y1-3pt) -- +(20,0);
+
+        \node[below=6pt of label1] (label3) {\makebox[0.7\textwidth]{系统调用接口}};
+        \node[note,right=1em of label3] {内核态};
+
+        \node[hide,below=3pt of label3] (hide0) {\makebox[1em]{}};
+        \node[on chain,left=of hide0] (process) {\makebox[0.3\textwidth]{进程管理}};
+        \foreach \i/\s/\t in {0/5/共享库支持,1/5/调度算法和框架,2/5/进程线程管理,3/4/生命周期管理} {
+            \node[step\s,on chain] (process\i) {\makebox[0.3\textwidth]{\t}};
+        }
+
+        \node[on chain,right=of hide0] (filesystem) {\makebox[0.3\textwidth]{文件管理}};
+
+        \foreach \i/\s/\t in {0/8/FAT 文件系统,1/8/Unix 文件系统,2/8/Buffer Cache} {
+            \node[step\s,on chain] (filesystem\i) {\makebox[0.3\textwidth]{\t}};
+        }
+
+        \node[on chain,below=3pt of process3.south west,anchor=north west] (network) {\makebox[0.3\textwidth]{网络}};
+        \node[step9,on chain] (network0) {\makebox[0.3\textwidth]{TCP/IP 协议栈}};
+
+        \node[hide,right=of network0] (hide1) {\makebox[1em]{}};
+
+        {[start chain=subchain0 going above]
+            \node[step7,on chain,right=of hide1] (ipc0) {\makebox[0.3\textwidth]{消息队列}};
+            \node[step7,on chain] (ipc1) {\makebox[0.3\textwidth]{Pipe}};
+            \node[on chain] (ipc) {\makebox[0.3\textwidth]{进程间通信}};
+        }
+
+        \node[on chain,below=3pt of network0.south west,anchor=north west] (mma) {\makebox[0.4\textwidth]{内存管理}};
+        \node[on chain,hide,anchor=north west] (hide2) at (mma.north west) {\makebox[0.25\textwidth]{}};
+        \foreach \i/\s/\t in {0/2/非连续地址空间分配,1/2/连续地址空间分配,2/2/虚拟内存分配管理,3/2/物理内存分配管理,4/2/页式内存管理} {
+            \node[step\s,on chain] (mml\i) {\makebox[0.25\textwidth]{\t}};
+        }
+
+        \node[on chain,hide,anchor=north east] (hide3) at (mma.north east) {\makebox[0.15\textwidth]{}};
+        \foreach \i/\s/\t in {0/3/写时复制,1/3/按需分配,2/3/页故障算法,3/3/页替换算法,4/3/swap 管理} {
+            \node[step\s,on chain] (mmr\i) {\makebox[0.15\textwidth]{\t}};
+        }
+
+        \node[step0,on chain,below=of mml4.south west,anchor=north west] (mmb) {\makebox[0.4\textwidth]{段式内存管理}};
+
+        \node[hide,right=of mma] (hide3) {\makebox[1em]{}};
+
+        \node[on chain,right=of hide3] (sync) {\makebox[0.2\textwidth]{同步互斥/死锁}};
+        \foreach \i/\s/\t in {0/6/死锁问题实例,1/6/同步互斥实例,2/6/semaphore 实现,3/6/各种 lock 实现} { 
+            \node[step\s,on chain] (sync\i) {\makebox[0.2\textwidth]{\t}};
+        }
+
+        \node[step0,on chain,below=3pt of sync3.south] (lib) {\makebox[0.2\textwidth]{内核 init}};
+        \foreach \i/\s/\t in {0/1/函数库,1/1/中断管理} {
+            \node[step\s,on chain] (lib\i) {\makebox[0.2\textwidth]{\t}};
+        }
+
+        \node[step0,on chain,below=3pt of mmb.south west,anchor=north west] (debug0) {\makebox[0.175\textwidth]{Monitor 监控}};
+        \node[step1,on chain,below=3pt of mmb.south east,anchor=north east] (debug1) {\makebox[0.175\textwidth]{Remote GDB}};
+
+        \draw let \p1=(debug0.south) in (0,\y1-3pt) %
+            node[anchor=north] (driver) {\makebox[0.7\textwidth]{设备驱动层}};
+
+        \node[note,right=1em of driver] {软件层};
+
+        {[start chain=subchain1 going right]
+            \draw let \p1=(driver.south west) in (\x1-36pt,\y1-3pt) %
+                node[hide,on chain,anchor=north east] (hide4) {};
+            \foreach \i/\s/\t in {0/9/网卡,1/0/串口,2/0/并口,3/0/CGA,4/0/硬盘,5/1/键盘,6/1/时钟} {
+                \node[step\s,on chain] (driver\i) {\makebox[0.08\textwidth]{\t}};
+            }
+            \node[step1,on chain] (driver7) {\makebox[0.135\textwidth]{中断控制器}};
+            \node[step0,on chain] (driver8) {\makebox[0.135\textwidth]{bootloader}};
+        }
+
+        \draw[-] let \p1=(driver0.south) in %
+            (-10,\y1-3pt) -- +(20,0);
+
+        {[start chain=subchain2 going right]
+            \draw let \p1=(driver0.south) in (-0.295\textwidth,\y1-6pt) %
+                node[hide,on chain,anchor=north east] (hide5) {};
+            \foreach \i/\t in {0/CPU,1/IO地址空间,2/MEM地址空间} {
+                \node[on chain] (hardware\i) {\makebox[0.18\textwidth]{\t}};
+                \node[on chain,hide,anchor=base] {\makebox[2em]{}};
+            }
+        }
+
+        \draw let \p1=(hardware0.south) in (0,\y1-5pt) %
+            node[anchor=north] (hardware) {\makebox[0.7\textwidth]{外设控制器/中断控制器}};
+        \node[note,right=1em of hardware] {硬件层};
+
+        {[start chain=subchain3 going right]
+            \draw let \p1=(hardware.south) in (-0.335\textwidth+1pt,\y1-5pt) %
+                node[hide,on chain,anchor=north east] (hide6) {};
+            \foreach \i/\t in {3/网卡,4/串口,5/并口,6/CGA,7/硬盘,8/键盘,9/时钟} {
+                \node[on chain] (hardware\i) {\makebox[0.09\textwidth]{\t}};
+                \node[on chain,hide,anchor=base] {\makebox[0.4em]{}};
+            }
+        }
+
+        \foreach \i in {0,1,2} {
+            \draw[-] let \p1=(hardware.north), \p2=(hardware\i.south) in
+                (\p2) -- (\x2,\y1);
+        }
+
+        \foreach \i in {3,...,9} {
+            \draw[-] let \p1=(hardware.south), \p2=(hardware\i.north) in
+                (\p2) -- (\x2,\y1);
+        }
+    \end{tikzpicture}
+}
+\caption{实验进度安排}\label{part0:schedule}
+\end{figure}
+\end{small}
+
+\section{搭建实验环境}
+
+我们参考了 MIT 的xv6、Harvard 的 OS161 和 Linux 等设计了 \ucore OS 实验，
+所有 OS 实验需在 Linux 环境下运行。
+
+\subsubsection{Linux 环境搭建}
+
+\paragraph{使用虚拟机}
+对于经验不足的同学，我们推荐使用虚拟机，
+因为这是最简单的一种搭建 Linux 环境的方法，
+我们也为大家已经准备好了一个可用的 Linux 镜像：
+\begin{small}
+\begin{itemize}[label=$\triangleright$]
+    \item %
+        安装 VirtualBox 虚拟机
+        （有 Windows 和其他系统版本，可以到
+        \href{http://www.virtualbox.org/wiki/Downloads}{下载地址} 下载）；
+    \item %
+        然后在 OS FTP 服务器上下载一个已经安装好
+        各种所需编辑、开发、调试以及运行软件的 Linux 实验环境的文件
+        （即一个虚拟磁盘镜像文件，比如 lab4student2011.7z）；
+    \item %
+        用 7-Zip 软件（可以到 \href{http://www.7-zip.org/download.html}{下载地址} 下载）
+        解压下载的 .7z 文件，解压后大小大约为5GB；
+    \item %
+        在 VirtualBox 中加载这个虚拟磁盘文件，就可以启动并运行 Linux 实验环境了。
+    \item %
+        启动 Linux，提供镜像的用户名和密码分别为：student:os；
+        进入系统后，实验内容位于 labs 目录下。
+\end{itemize}
+\end{small}
+
+\noindent
+镜像中还配备了完整的实验工具链。
+而对于有经验的同学，可以自己尝试搭建实验所需的环境。
+具体的工具的下载地址，可以参考本节末尾。
+\begin{small}
+\begin{itemize}
+    \item [{\bf{工具链：}}] %
+        \ucore 的编译和调试需要使用 gcc、gdb 以及 binutils，%
+        为了保证脚本的正常工作，我们还需要比较新的 gmake、awk、sed、tr 和 grep 等，
+        不过这些工具通常都已经预先安装在系统中了，
+        与此同时，我们推荐使用 vim+cscope 或者 emacs+etags 来完成代码。
+
+        $\bullet$ 需要说明的是，我们推荐使用 gcc-4.4、gdb-7.2 以及 binutils-2.19，
+        至少能够确保在这些环境下 \ucore 是能正常编译和运行的。
+        其他版本的工具可以参考
+        \href{http://wiki.osdev.org/Cross-Compiler_Successful_Builds}{Wiki} 来了解。
+
+        $\bullet$ 对于 gcc-4.6 或者更高，
+        由于编译出来的二进制文件引入了新的段
+        （实际上 \ucore 中并不需要），
+        导致 bootloader 超过了限制的大小。
+        所以我们还需要额外的指定 bootloader 的链接脚本和修改默认的 Makefile 规则。
+        不过我们目前还没有提供这些工具。
+
+        如果需要自己编译 gcc 和 binutils 的话，
+        可以使用下面编译方法
+        （gcc 依赖 binutils，所以应按照顺序编译；同时，
+        为了避免和系统安装的工具冲突，我们使用 i386-ucore-elf- 前缀）
+        按顺序编译和安装：
+
+\noindent {\bf{binutils：}}
+\begin{bashcode1}
+$ cd binutils-2.19
+$ ./configure --disable-nls --disable-werror --target=i386-ucore-elf \ 
+          --program-prefix=i386-ucore-elf-
+$ make && sudo make install
+\end{bashcode1}
+
+\noindent {\bf{gcc：}}
+\begin{bashcode1}
+$ cd gcc-4.4.3; mkdir i386; cd i386
+$ ../configure --disable-threads --without-headers --disable-shared \
+          --disable-nls --disable-libmudflap --disable-libssp \
+          --with-newlib --target=i386-ucore-elf \ 
+          --program-prefix=i386-ucore-elf-
+$ make && sudo make install
+\end{bashcode1}
+    \item [{\bf{模拟器：}}] %
+        实验中使用的 Qemu 模拟器，我们推荐从源码编译和安装。
+        因为通常 Linux 源里面的 Qemu 的版本都太落后了。
+        更重要的是，{\bf{你可能还需要一个 Qemu 关于 gdb 调试 的 patch}}：
+
+        \begin{footnotesize}{\it{
+            通过 gdb 对 Qemu 设置断点时，Qemu 默认设置的是 linear address。
+            而 lab2 之后，\ucore 在某些时候段偏移不为 0，就是说，
+            我们需要根据段偏移计算正确的断点位置。
+            为了调试方便，qemu-0.14.0-bp.patch 将 Qemu 对断点的理解修改为利用 virtual address。
+            具体的调试过程，在 lab2 实验中会遇到，我们会做进一步的解释。
+        }}\end{footnotesize}
+
+        $\bullet$ 推荐的 Qemu 版本是 qemu-0.14
+        \footnote{目前 Qemu 官方网站上只能找到 qemu-0.14.1 了，
+        我们也可以使用这个版本。}，
+        具体的安装步骤如下：
+\begin{bashcode1}
+$ cd qemu-0.14; patch -p1 < YOUR_PATH/qemu-0.14-bp.patch
+$ ./configure --target-list="i386-softmmu x86_64-softmmu" --enable-sdl
+\end{bashcode1}
+        最后再执行 make \&\& sudo make install 来完成 Qemu 的编译和安装。
+        
+        这里同时编译了 i386 和 x86\_64 两个版本，因为 \ucore 也同时有 x86\_64 版本。
+
+        $\bullet$ 对于调试 x86\_64 版本的 \ucore，
+        我们还需要给 gdb 打上 patch，
+        这同时也就意味着我们需要自己编译和安装 gdb，
+        为了避免和系统默认工具的冲突，
+        我们使用x86\_64-ucore-elf-
+        这样的前缀。
+        整个工具链编译顺序如下：
+
+\noindent {\bf{binutils：}}
+\begin{bashcode1}
+$ cd binutils-2.19
+$ ./configure --disable-nls --disable-werror --target=x86_64-ucore-elf \
+          --program-prefix=x86_64-ucore-elf- 
+$ make && sudo make install
+\end{bashcode1}
+
+\noindent {\bf{gcc：}}
+\begin{bashcode1}
+$ cd gcc-4.4.3; mkdir x86_64; cd x86_64
+$ ../configure --disable-threads --without-headers --disable-shared \
+          --disable-nls --disable-libmudflap --disable-libssp \
+          --with-newlib --target=x86_64-ucore-elf \ 
+          --program-prefix=x86_64-ucore-elf-
+$ make && sudo make install
+\end{bashcode1}
+
+\noindent {\bf{gdb：}}
+\begin{bashcode1}
+$ cd gdb-7.2
+$ patch -p0 < YOUR_PATH/gdb-remote-7.x.patch && \
+          patch -p0 < YOUR_PATH/gdb-ucore-elf-7.x.patch
+$ ./configure --disable-werror --target=x86_64-ucore-elf \
+          --program-prefix=x86_64-ucore-elf-
+$ make && sudo make install
+\end{bashcode1}
+\end{itemize}
+
+这样，所需的工具链，基本上就安装好了。所需要主要工具的下载链接如下：
+\begin{itemize}
+    \item %
+        binutils \href{http://ftp.gnu.org/gnu/binutils/}{下载地址}；
+        gcc \href{http://gcc.gnu.org/mirrors.html}{下载地址} 和 gdb \href{http://ftp.gnu.org/gnu/gdb/}{下载地址}；
+        Qemu \href{http://wiki.qemu.org/Download}{下载地址}。 
+\end{itemize}
+\end{small}
+
+\subsubsection{Mac OS X 环境搭建}
+
+在 darwin 下也可以完成 \ucore 实验，
+只不过 Mac OS 系统自带的工具不足或者版本不兼容，
+所以我们还需要通过 macports（\href{http://http://www.macports.org/}{下载地址}）
+来安装所需要的工具。
+
+{\emph{
+【注意】
+编译这些工具的时候（也包括 Qemu），
+确保使用的不是 llvm-gcc
+\footnote{XCode 4.1 会在系统中安装 gcc-4.2 和 llvm-gcc-4.2，
+而默认 gcc 是后者的软链接。可以修改软链接或者在 configure 过程直接指定 CC=gcc-4.2。}，
+否则可能会遇到很多无法解决的编译时或者运行时错误。}}
+
+\begin{small}
+\begin{itemize}
+    \item [{\bf{工具链}}] %
+        Mac 下命令行工具大多为 BSD 版本的，
+        由于开发 \ucore 主要用的是 GNU 版本工具，
+        所以我们还必要用 macports 重新搭建一遍合适的命令行环境。
+        具体所需要的命令行工具在 Linux 环境搭建一节已经提到了，只要逐个编译安装即可。
+
+        编译安装完所需的工具之后，
+        还需要更新环境变量 PATH 以及为部分命令制作软连接以保证安装生效。
+        具体的可以根据需要，比如编译 \ucore 过程中所遇到的错误，进行操作。
+
+\noindent {\bf{binutils、gdb：}}
+
+        Mac 下 binutils 和 gdb 都需要从源码编译安装，
+        安装过程和 Linux 下安装方法一样。
+\noindent {\bf{gcc：}}
+
+        Mac 下 gcc 必须从源码编译和安装。
+        编译 gcc 之前，
+        还需要先通过 macports 安装编译过程所需要的几个必须的库：
+\begin{bashcode1}
+$ sudo port install gmp mpfr
+$ sudo port install libiconv
+\end{bashcode1}
+        编译方法基本相同，唯一的差异在于需要指明刚刚安装库的路径。
+        以 i386 版本 gcc 为例：
+\begin{bashcode1}
+$ cd gcc-4.4.3; mkdir i386; cd i386
+$ ../configure --disable-threads --without-headers --disable-shared \
+          --disable-nls --disable-libmudflap --disable-libssp \
+          --with-newlib --target=i386-ucore-elf \ 
+          --program-prefix=i386-ucore-elf- \
+          --with-gmp=/opt/local --with-mpfr=/opt/local \
+          --with-mpc=/opt/local \
+          --with-libiconv-prefix=/opt/local
+\end{bashcode1}
+    \item [{\bf{模拟器}}] %
+        Mac 下 Qemu 的安装和 Linux 类似，
+        也需要从源码开始编译。
+        具体过程可以参见 Linux 下环境的配置，
+        只不过编译参数略有不同：
+
+        Mac 下 Qemu 也需要从源码下载安装，
+        下载地址可以从上一节中找到。
+        与 Linux 下编译 Qemu 的参数稍有不同，如下：
+\begin{bashcode1}
+$ cd qemu-0.14; patch -p1 < YOUR_PATH/qemu-0.14-bp.patch
+$ ./configure --target-list="i386-softmmu x86_64-softmmu" \
+          --disable-sdl --enable-cocoa
+\end{bashcode1}
+\end{itemize}
+\end{small}
+
+\section{运行调试}
+
+\subsubsection{开发 OS 实验的简单步骤}
+
+在我们提供的 lab1$\sim$lab6 实验软件包中，大致经过如下过程就可以完成使用：
+\begin{small}
+\begin{itemize}[label=$\triangleright$]
+    \item %
+        解压软件包，例如执行：tar -jxf lab1.tar.bz2；
+    \item %
+        进入各个 OS 实验工程目录，例如：cd lab1/proj1；
+    \item %
+        根据实验要求阅读源码并修改代码（用各种文本编辑器）；
+    \item %
+        编译源码，例如执行：make；
+    \item %
+        运行编译结果，例如执行：make qemu；
+    \item %
+        环境中提供了测试脚本，例如执行：make grade；
+        以及通过 gdb 远程调试的 make debug；
+    \item %
+        如果实现基本正确，运行打包命令，例如：make handin。
+\end{itemize}
+\end{small}
+
+代码中的 Makefile 文件以及使用的各种辅助和测试工具相对比较复杂，
+后面在用到的时候会具体的进行介绍。
+
+\subsubsection{Qemu 模拟器}
+
+可以通过阅读 \href{http://wiki.qemu.org/download/qemu-doc.html}{说明文档}
+来了解如何使用 Qemu。
+命令行 qemu -{}-help 也提供了简短的说明。
+这里我们再介绍一下几个使用过的基本参数：
+
+\begin{small}
+\begin{longtable}[htbp]
+{>{\raggedleft}p{0.2\textwidth}@{\hspace{1em}}|>{\raggedright}p{0.6\textwidth}}
+\toprule[1.4pt]
+\hline
+-hda file\footnote{-hda file 与 -drive file,media=disk 等价，%
+但是由于模拟磁盘速度太慢，%
+脚本还使用了 cache=writeback 来提高效率。} & 使用 file 作为第 0 块磁盘镜像，
+    同样的 -hdb、-hdc 和 -hdd 可以分别指定第1、2、3块磁盘镜像。
+\tabularnewline\hline
+-snapshot & 写入临时文件而不写回磁盘镜像，可以使用 C-a s 来强制写回。
+\tabularnewline\hline
+-m n & 设置 Qemu 虚拟 RAM 大小，默认情况下是 128MB。
+    参数 n 的单位可以使 K、M 或者 G 比如 -m 2G。
+\tabularnewline\hline
+-smp n & 设置为有 n 个 CPU 的 SMP 系统，以 PC 为目标机，最多有 256 个 CPU。
+\tabularnewline\hline
+-nographic & 禁止图形输出，方便 ssh 登录到其他系统时调试 Qemu 时使用，
+    grade 测试脚本中也使用了该参数。
+\tabularnewline\hline
+-serial dev & \multirow{7}*{%
+    \begin{tabular}{@{}l}
+    重定向虚拟串口、虚拟并口以及 monitor 到指定文件。\\
+    其中 dev 可以是下列设备中的一个：\\
+    \begin{tabular}{@{\hspace{1em}}l@{ - }l}
+        \hline
+        vc & 虚拟终端 \\
+        null & 空设备 \\
+        stdio & 标准输入输出设备 \\
+        file:filename & 将输出写到文件中 \\
+        pipe:pipename & 命名管道 pipename
+    \end{tabular}
+    \end{tabular}
+} \tabularnewline
+-parallel dev \tabularnewline
+-monitor dev \tabularnewline
+\tabularnewline
+\tabularnewline
+\tabularnewline
+\tabularnewline\hline
+-port n & 改变 gdb 连接的调试端口，默认调试端口为 1234。
+\tabularnewline\hline
+-s & 启动 gdb 连接的调试端口
+\tabularnewline\hline
+-S & 在启动 Qemu 时，
+    不启动 CPU 而停留在 monitor 上，
+    需要输入命令 'c' 才能开启模拟工作。
+    通常与 -s 命令一起使用。
+\tabularnewline\hline
+-d & 输出日志到 qemu.log 文件
+\tabularnewline\hline
+\bottomrule[1.2pt]
+\caption{Qemu 参数说明}
+\end{longtable}
+\end{small}
+
+例如在 lab1 和 lab6 中，可以分别看到下面两个命令：
+
+\begin{minipage}{0.95\textwidth}
+\centering
+\begin{small}
+\begin{bashcode1}
+$ qemu -parallel stdio -serial null -hda bin/ucore.img
+\end{bashcode1}
+\begin{bashcode1}
+$ qemu -parallel stdio -serial null -hda bin/ucore.img \
+          -drive file=bin/swap.img,media=disk,cache=writeback \
+          -drive file=bin/sfs.img,media=disk,cache=writeback
+\end{bashcode1}
+\end{small}
+\end{minipage}
+
+\subsubsection{源代码组织}
+
+\ucore 工程下，每个 project 都有如下的目录结构：
+\begin{small}
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[x=0.05\textwidth,y=1em,auto,start chain=going right]
+    \tikzstyle{every node}=[fill=none,rectangle,minimum height=18pt,draw=none,above,opaque,node distance=0pt,inner sep=0pt]
+    \node[on chain,minimum width=0pt] (hide) at (0,0) {};
+    \foreach \i/\t in {%
+            0/{\textcolor{DarkRed}{bin}},%
+            1/{\textcolor{DarkBlue}{boot}},%
+            2/{\textcolor{DarkBlue}{disk0}},%
+            3/{\textcolor{DarkBlue}{libs}},%
+            4/{\textcolor{DarkBlue}{kern}},%
+            5/{\textcolor{DarkRed}{obj}},%
+            6/{\textcolor{DarkBlue}{tools}},%
+            7/{\textcolor{DarkBlue}{user}},%
+            8/Makefile} {
+        \node[on chain] (label\i) {\makebox[0.09\textwidth]{\t}};
+        \draw[-] let \p1=(label\i.north) in %
+            (\x1,\y1) -- +(0,5pt);
+    }
+    \draw[-] let \p1=(label0.north),\p2=(label8.north) in %
+        (\x1,\y1+5pt) -- (\x2,\y2+5pt);
+    \draw[-] let \p1=(label4.north) in %
+        (\x1,\y1+5pt) -- +(0,8pt) node{/};
+\end{tikzpicture}
+\end{figure}
+\end{small}
+
+下面分别介绍每个目录的组成和功能，
+对应的，可以参见图 \ref{part0:schedule} 的组织结构：
+\begin{small}
+\begin{itemize}
+    \item [{\bf{bin 目录：}}] %
+        bin 目录下主要保存编译生成的结果。
+        同 obj 目录一样，
+        两个目录都在编译过程中才生成。
+        目录下最终会有如下文件列表：
+        \begin{longtable}[htbp]
+        {|>{\raggedright}p{0.17\textwidth}@{\hspace{1em}}|>{\raggedright}p{0.68\textwidth}|}
+        \hline
+        ucore.img & (hda) 内核磁盘镜像，包含了 bootloader 以及内核二进制代码。\tabularnewline\hline
+        swap.img & (hdb)交换分区文件，通常大小为 256M。\tabularnewline\hline
+        sfs.img & (hdc) sfs 格式的文件系统分区文件。\tabularnewline\hline
+        bootblock \& kernel & 编译生成的 bootloader 以及 kernel 的二进制代码。\tabularnewline\hline
+        mksfs & 辅助工具，将 disk0 下的文件、文件夹按照 sfs 规范创建 sfs.img 磁盘。\tabularnewline\hline
+        sign & 辅助工具，检查 bootblock 大小，并将其灌入 ucore.img 的第一个扇区。\tabularnewline\hline
+        \end{longtable}
+    \item [{\bf{boot 目录：}}] %
+        boot 目录下主要是 bootloader 部分的代码实现，
+        这部分的主要功能是：
+        \begin{itemize}[label=$\bullet$,leftmargin=2em]
+            \item %
+                完成开机后的硬件初始化，
+                其中包括正确设置寄存器、栈的位置、
+                检测物理内存以及打开硬件保护模式等等；
+            \item %
+                读取磁盘将 \ucore OS 加载到内存的适当位置；
+            \item %
+                最后通过跳转指令，将 CPU 移交给 \ucore 的 init 子系统。
+        \end{itemize}
+    \item [{\bf{disk0 目录：}}] %
+        disk0 目录下保存了生成 sfs.img 所需要的数据。
+        mksfs 程序会根据 disk0 下目录结构以及文件链接（仅考虑硬链接）
+        按照 sfs 文件系统定义的格式
+        组织和创建 sfs.img 镜像文件。（不过会忽略掉 .$*$ 文件）
+    \item [{\bf{libs 目录：}}] %
+        libs 目录下面定义了内核程序（kern 目录下）
+        以及用户程序（user 目录下）共享的各种头文件和库函数。
+        例如链表、字符串操作以及随机数等等。
+    \item [{\bf{kern 目录：}}] %
+        kern 目录下的代码是 \ucore OS 的核心代码，
+        子系统按照不同目录进行组织：
+
+        \begin{figure}[h]
+        \centering
+        \scalebox{0.8}{
+            \begin{normalsize}
+            \begin{minipage}{\textwidth}
+                \setlength{\baselineskip}{1.3em}
+                \newcommand{\minibox}[1]{%
+                    \begin{minipage}[t]{0.7\textwidth}\setlength{\baselineskip}{1.2em}%
+                    {#1}\end{minipage}}
+                \dirtree{%
+                    .1 kern.
+                    .2 init\DTcomment{\minibox{
+                            init 子系统：调用系统其它各部分组件完成具体的内核初始化工作。
+                            对于 x86\_64 的 \ucore，
+                            该部分还负责完成从保护模式到长模式的转换功能。}}.
+                    .2 debug\DTcomment{\minibox{
+                            与 monitor 和 debug 相关代码。}}.
+                    .2 driver\DTcomment{\minibox{
+                            磁盘、显示、键盘、时钟以及中断控制器等驱动代码。}}.
+                    .2 mm\DTcomment{\minibox{
+                            内存管理子系统：完成物理内存的初始化，
+                            并提供物理内存、页表、虚拟内存以及 swap 分区的维护和管理。}}.
+                    .2 libs\DTcomment{\minibox{
+                            内核私有的库函数。}}.
+                    .2 trap\DTcomment{\minibox{
+                            中断处理系统：完成中断的初始化以及中断的分发和处理。}}.
+                    .2 syscall\DTcomment{\minibox{
+                            系统调用系统：定义了系统调用的入口，
+                            完成系统调用的初始化以及中断的分发和处理。}}.
+                    .2 process\DTcomment{\minibox{
+                            进程管理系统：完成进程的生命周期以及进程之间共享数据的管理，
+                            同时还提供了进程上下文切换函数库。}}.
+                    .2 schedule\DTcomment{\minibox{
+                            调度器：提供了调度器实现框架，
+                            以及实现了几个基本的调度器算法。}}.
+                    .2 sync\DTcomment{\minibox{
+                            同步互斥：提供了多种同步互斥机制，
+                            例如：event、message 以及 semaphore 等等。}}.
+                    .2 fs\DTcomment{\minibox{
+                            文件系统：}}.
+                    .3 swapfs\DTcomment{\minibox{
+                            定义了与 swap 分区有关的各种操作。}}.
+                    .3 vfs\DTcomment{\minibox{
+                            定义了 vfs 框架，提供对设备以及文件系统的支持。}}.
+                    .3 pipe\DTcomment{\minibox{
+                            基于 vfs，实现匿名和命名管道。}}.
+                    .3 devs\DTcomment{\minibox{
+                            基于 vfs，实现了 stdin、stdout 以及 null device。}}.
+                    .3 sfs\DTcomment{\minibox{
+                            基于 vfs，实现了基于 inode 管理的文件系统，
+                            支持目录和文件管理以及最大 2G 的容量。}}.
+                }
+            \end{minipage}
+            \end{normalsize}
+        }
+        \begin{footnotesize}
+        \caption{\ucore 主要结构}
+        \end{footnotesize}
+        \end{figure}
+    \item [{\bf{obj 目录：}}] %
+        obj 编译过程生成的目录。
+        他将所有生成的 .o 文件以及反汇编 .asm 等文件，
+        按照源代码的目录结构进行组织。
+        其中 bootblock.asm 是 bootloader 的反会变结果；
+        kernel.asm 和 kernel.sym 分别是内核的反汇编和符号表。
+    \item [{\bf{user 目录：}}] %
+        用户态测试程序以及样例。其中 libs 为 用户态私有的库函数。
+    \item [{\bf{tools 目录：}}] %
+        tools 目录下主要为辅助工具。
+        \begin{longtable}[htbp]
+        {|>{\raggedright}p{0.17\textwidth}@{\hspace{1em}}|>{\raggedright}p{0.68\textwidth}|}
+        \hline
+        function.mk & 定义了 Makefile 使用的函数。\tabularnewline\hline
+        kernel.ld \& user.ld & 用于内核和用户程序链接的脚本，
+            其中还定义了链接程序的起始地址。\tabularnewline\hline
+        vector.c & 用于生成中断向量表。\tabularnewline\hline
+        mksfs.c & 用于根据 disk0 目录结构生成 sfs.img。\tabularnewline\hline
+        sign.c & 用于将 bootloader 导入到 ucore.img 镜像中。\tabularnewline\hline
+        grade.sh & 测试脚本，根据脚本中定义的测试样例输出测试结果。\tabularnewline\hline
+        \end{longtable}
+    \item [{\bf{Makefile：}}] %
+        用于控制编译和链接的脚本。几个常用的命令如下：
+        \begin{longtable}[htbp]
+        {|>{\raggedright}p{0.17\textwidth}@{\hspace{1em}}|>{\raggedright}p{0.68\textwidth}|}
+        \hline
+        make & （没有参数）编译代码。\tabularnewline\hline
+        make qemu & 编译代码并运行。\tabularnewline\hline
+        make touch & 更新相关文件的时间戳，
+            用来保证通过命令行传递的宏能够起作用。\tabularnewline\hline
+        make run-{\it{func}} & 在 lab3 及以后，
+            通过该命令能够编译并运行 func 用户程序。\tabularnewline\hline
+        make debug & 启动 gdb 调试。\tabularnewline\hline
+        make grade & 运行测试脚本进行测试。\tabularnewline\hline
+        make clean & 清除编译结果。\tabularnewline\hline
+        make handin & 将目录下所有文件打包。\tabularnewline\hline
+        \end{longtable}
+\end{itemize}
+\end{small}
+
+运行 make 命令的时候，通常后台所执行的命令是隐藏的，
+因为 Makefile 如下一行定义：
+
+\begin{minipage}{0.95\textwidth}
+\centering
+\begin{small}
+\begin{bashcode1}
+V   := @
+\end{bashcode1}
+\end{small}
+\end{minipage}
+
+将其删掉，或者做简单的修改，
+就可以看到编译全部过程的命令以及参数：
+
+\begin{minipage}{0.95\textwidth}
+\centering
+\begin{small}
+\begin{bashcode1}
+V   :=
+\end{bashcode1}
+\end{small}
+\end{minipage}
+
+\subsubsection{Qemu 调试}
+
+Qemu 启动时加入 -S 参数时，可以让 CPU 启动时停留在 monitor 上。
+在 monitor 中，常用的命令如下：
+\begin{small}
+\begin{longtable}[htbp]
+{|>{\raggedright}p{0.21\textwidth}@{\hspace{1em}}|>{\raggedright}p{0.68\textwidth}|}
+\hline
+help & 查看 Qemu 帮助，显示所有支持的命令。\tabularnewline\hline
+q | quit & 退出 Qemu。\tabularnewline\hline
+stop & 停止 Qemu。\tabularnewline\hline
+c | cont & 开始连续执行。\tabularnewline\hline
+x /fmt {\it{addr}} & 显示内存内容，
+    其中使用命令 `x' 为虚地址、`xp' 为实地址。\tabularnewline
+xp /fmt {\it{addr}} & 参数 /fmt 为 /i 表示反汇编（/10i 表示 10 条），
+    缺省参数为前一次参数。\tabularnewline\hline
+p | print & 计算表达式值并显示，例如 \$reg 表示寄存器结果。\tabularnewline\hline
+memsave {\it{addr size file}} & 将内存保存到文件，
+    memsave 为虚地址，pmemsave 为实地址。\tabularnewline
+pmemsave {\it{addr size file}} & \tabularnewline\hline
+断点相关 & Qemu 目前没有支持通过 monitor 直接设置断点，
+    但 gdb 设置断点。\tabularnewline\hline
+info 相关操作 & 查询 Qemu 支持的关于系统状态信息的操作。\tabularnewline
+& 最常用的是 info registers，它能显示全部硬件寄存器，比如 CR3 等。\tabularnewline\hline
+\end{longtable}
+\end{small}
+
+\noindent
+其他具体的命令格式以及说明，
+参见 qemu help 命令帮助。
+
+\emph{【注意】：qemu 默认有 `singlestep [on|off]' 命令，
+该命令为设置单步标志命令。}
+
+\clearpage
+
+简单的调试 Qemu 的例子如下：
+
+\begin{minipage}{0.95\textwidth}
+\centering
+\begin{small}
+g\begin{bashcode2}
+QEMU 0.14.1 monitor - type 'help' for more information
+(qemu) p $pc
+    0xfffffff0
+(qemu) xp /3i $pc
+    0xfffffff0:  ljmp   $0xf000,$0xe05b
+    0xfffffff5:  xor    %dh,0x322f
+    0xfffffff9:  xor    (%bx),%bp
+(qemu) info registers
+    EAX=00000000 EBX=00000000 ECX=00000000 EDX=00000633
+    ESI=00000000 EDI=00000000 EBP=00000000 ESP=00000000
+    EIP=0000fff0 EFL=00000002 [-------] CPL=0 II=0 A20=1 SMM=0 HLT=0
+    ES =0000 00000000 0000ffff 00009300
+    CS =f000 ffff0000 0000ffff 00009b00
+    SS =0000 00000000 0000ffff 00009300
+    DS =0000 00000000 0000ffff 00009300
+    ... ...
+\end{bashcode2}
+\end{small}
+\end{minipage}
+
+\vspace{2em}
+
+log 命令能够保存 Qemu 模拟过程产生的信息
+（与 qemu 运行参数 `-d' 相同），
+具体参数可以参考命令帮助。
+产生的日志信息保存在“/tmp/qemu.log”中。
+例如使用 `log in\_asm'命令以后，
+运行过程产生的的 qemu.log 文件为：
+
+\begin{minipage}{0.95\textwidth}
+\centering
+\begin{small}
+\begin{bashcode2}
+	1 ----------------
+	2 IN:
+	3 0xfffffff0:  ljmp   $0xf000,$0xe05b
+	4 
+	5 ----------------
+	6 IN:
+	7 0x000fe05b:  xor    %ax,%ax
+	8 0x000fe05d:  out    %al,$0xd
+	9 0x000fe05f:  out    %al,$0xda
+   10 0x000fe061:  mov    $0xc0,%al
+   11 0x000fe063:  out    %al,$0xd6
+   12 0x000fe065:  mov    $0x0,%al
+   13 0x000fe067:  out    %al,$0xd4
+   ... ...
+\end{bashcode2}
+\end{small}
+\end{minipage}
+
+\newpage
+
+\subsubsection{GDB 调试}
+
+通过 gdb 可以对 \ucore 代码进行调试，
+以 proj3 中 main 函数 memset 为例：
+
+\begin{small}
+\begin{enumerate}[label=(\arabic*)]
+    \item %
+        运行命令 make debug-mon，实际执行命令如下：
+\begin{bashcode1}
+$ qemu -S -s -monitor stdio -hda bin/ucore.img \
+          -parallel null -serial null
+\end{bashcode1}
+    \item %
+        运行命令 make gdb 连接 Qemu：
+\begin{bashcode1}
+$ i386-ucore-elf-gdb -q -x tools/gdbinit
+\end{bashcode1}
+    \item %
+        设置断点并执行；
+    \item %
+        通过 gdb 对 Qemu 单步调试。
+\end{enumerate}
+\end{small}
+
+\noindent
+运行过程以及结果如下：
+
+\begin{small}
+\centering
+\begin{longtable}[htbp]
+{@{}>{\centering}p{0.5\textwidth}@{}|@{}>{\centering}p{0.5\textwidth}@{}}
+\toprule[1.4pt]
+\hline
+Qemu & gdb \tabularnewline\hline
+{\raggedright\vspace{-\topskip}{\begin{bashcode0}[fontadjust]
+$ make debug-mon
+\end{bashcode0}}}
+& \tabularnewline
+{}
+&
+{\raggedright\vspace{-\topskip}{\begin{bashcode0}
+$ make gdb
+0x0000fff0 in ?? ()
+Breakpoint 1 at 0x100000: file kern/init/init.c, line 9.
+(gdb) list memset
+47   * @n:      number of bytes to be set to the value
+48   *
+49   * The memset() function returns @s.
+50   * */
+51	void *
+52	memset(void *s, char c, size_t n) {
+53	#ifdef __HAVE_ARCH_MEMSET
+54	    return __memset(s, c, n);
+55	#else
+56	    char *p = s;
+(gdb) b memset
+Breakpoint 2 at 0x100cf4: file libs/string.c, line 52.
+(gdb) info b
+Num     Type           Disp Enb Address    What
+1       breakpoint     keep y   0x00100000 in kern_init at kern/init/init.c:9
+2       breakpoint     keep y   0x00100cf4 in memset at libs/string.c:52
+(gdb) cont
+Continuing.
+
+Breakpoint 1, kern_init () at kern/init/init.c:9
+9	kern_init(void) {
+(gdb) cont
+Continuing.
+
+Breakpoint 2, memset (s=0x10208c, c=0 '\000', n=12) at libs/string.c:52
+52	memset(void *s, char c, size_t n) {
+(gdb)
+\end{bashcode0}}}
+\tabularnewline\hline
+& {\raggedright\vspace{-\topskip}{\begin{bashcode0}[fontadjust]
+(gdb) info registers
+eax            0xc	12
+ecx            0xc	12
+edx            0x102098	1056920
+ebx            0x10074	65652
+esp            0x7bbc	0x7bbc
+ebp            0x7be8	0x7be8
+esi            0x10074	65652
+edi            0x0	0
+eip            0x100cf4	0x100cf4 <memset>
+eflags         0x16	[ PF AF ]
+cs             0x8	8
+ss             0x10	16
+ds             0x10	16
+es             0x10	16
+fs             0x10	16
+gs             0x10	16
+(gdb)
+\end{bashcode0}}}
+\tabularnewline
+{\raggedright\vspace{-\topskip}{\begin{bashcode0}[fontadjust]
+(qemu) info registers
+EAX=0000000c EBX=00010074 ECX=0000000c EDX=00102098
+ESI=00010074 EDI=00000000 EBP=00007be8 ESP=00007bbc
+EIP=00100cf4 EFL=00000016 [----AP-] CPL=0 II=0 A20=1 ...
+ES =0010 00000000 ffffffff 00cf9300 DPL=0 DS   [-WA]
+CS =0008 00000000 ffffffff 00cf9a00 DPL=0 CS32 [-R-]
+SS =0010 00000000 ffffffff 00cf9300 DPL=0 DS   [-WA]
+DS =0010 00000000 ffffffff 00cf9300 DPL=0 DS   [-WA]
+FS =0010 00000000 ffffffff 00cf9300 DPL=0 DS   [-WA]
+GS =0010 00000000 ffffffff 00cf9300 DPL=0 DS   [-WA]
+LDT=0000 00000000 0000ffff 00008200 DPL=0 LDT
+TR =0000 00000000 0000ffff 00008b00 DPL=0 TSS32-busy
+GDT=     00007d5c 00000017
+IDT=     00000000 000003ff
+CR0=00000011 CR2=00000000 CR3=00000000 CR4=00000000
+DR0=00000000 DR1=00000000 DR2=00000000 DR3=00000000
+DR6=ffff0ff0 DR7=00000400
+EFER=0000000000000000
+FCW=037f FSW=0000 [ST=0] FTW=00 MXCSR=00001f80
+FPR0=0000000000000000 FPR1=0000000000000000
+FPR2=0000000000000000 FPR3=0000000000000000
+FPR4=0000000000000000 FPR5=0000000000000000
+FPR6=0000000000000000 FPR7=0000000000000000
+XMM00=00000000000000000000000000000000 XMM01=... ...
+XMM02=00000000000000000000000000000000 XMM03=... ...
+XMM04=00000000000000000000000000000000 XMM05=... ...
+XMM06=00000000000000000000000000000000 XMM07=... ...
+\end{bashcode0}}}
+& \tabularnewline\hline
+\bottomrule[1.2pt]
+\end{longtable}
+\end{small}
+
+可见，当调试硬件时，gdb 所能查看的寄存器数量十分有限，
+特别是类似 cs 这类有隐藏部分的寄存器以及控制寄存器等。
+这时候，Qemu 和 gdb
+\footnote{对于 x86\_64 的 \ucore，
+会出现从保护模式到长模式的转换过程，
+这时候用 gdb 调试，
+需要通过 set architecture 来指定 CPU 类型
+（比如 i386 或者 i386:x86-64:intel 等）。}
+联合调试就显得十分必要了。
+
+除此之外，gdb 可以监视程序变量的值、单步执行、
+显示/修改变量或者寄存器、查看数据结构
+\footnote{比较有意思的是，gdb 可以通过强制类型转换查看内存单元的数据。
+这点调试过程中比较有用。}
+以及堆栈等。
+具体的使用方法可以参考 gdb 帮助文件。
+
+\section{了解处理器硬件}
+
+要想深入理解 \ucore，
+就需要了解支撑 \ucore 运行的硬件环境，
+即了解处理器体系结构（了解硬件对 \ucore 带来影响）和机器指令集（读懂 \ucore 的汇编）。
+\ucore 目前支持的硬件环境是基于 Intel 80386 以上的计算机系统。
+更多的硬件相关内容（比如保护模式等）将随着实现 \ucore 的过程逐渐展开介绍。
+
+\subsubsection{Intel 80386 运行模式}
+
+80386 有四种运行模式：实模式、保护模式、SMM 模式和虚拟 8086 模式。
+这里对涉及 \ucore 的实模式、保护模式做一个简要介绍。
+
+\paragraph{实模式：}
+80386 加电启动后处于实模式运行状态，
+在这种状态下软件可访问的物理内存空间不能超过 1MB，
+且无法发挥 Intel 80386 以上级别的 32 位 CPU 的 4GB 内存管理能力。
+
+实模式将整个物理内存看成分段的区域，
+程序代码和数据位于不同区域，
+操作系统和用户程序并没有区别对待，
+而且每一个指针都是指向实际的物理地址。
+这样用户程序的一个指针如果指向了操作系统区域或其他用户程序区域，
+并修改了内容，那么其后果就很可能是灾难性的。
+
+80386 处理器中的实模式是为了和 8086 处理器兼容而设置的。
+在实模式下，80386 处理器就相当于一个快速的8086处理器。
+80386 处理器被复位或加电的时候以实模式启动。
+这时候处理器中的各寄存器以实模式的初始化值工作。
+80386 处理器在实模式下的存储器寻址方式和 8086 是一样的，
+由段寄存器的内容乘以 16 当做基地址，
+加上段内的偏移地址形成最终的物理地址，
+这时候它的 32 位地址线只使用了低 20 位，
+即可访问 1MB 以内的物理地址空间。
+在实模式下，80386处理器不能对内存进行页机制管理，
+所以指令寻址的地址就是内存中实际的物理地址；
+所有的段都是可以读、写和执行的；
+不支持优先级，所有的指令相当于工作在特权级（即优先级0），
+所以它可以执行所有特权指令，包括读写控制寄存器 CR0 等；
+以及不支持硬件上的多任务切换。
+实模式下的中断处理方式和 8086 处理器相同，
+也用中断向量表来定位中断服务程序地址，
+而且中断向量表的结构也相同，即每 4 个字节组成一个中断向量，
+其中包括两个字节的段地址和两个字节的偏移地址。
+
+\paragraph{保护模式：}
+实际上，80386 就是通过在实模式下初始化控制寄存器，
+GDTR，LDTR，IDTR 与 TR 等管理寄存器以及页表，
+然后再通过加载 CR0 使其中的保护模式使能位置位而进入保护模式的。
+当 80386 工作在保护模式下的时候，
+其所有的 32 根地址线都可供寻址，物理寻址空间高达 4GB。
+在保护模式下，支持内存分页机制，
+提供了对虚拟内存的良好支持。
+保护模式下 80386 支持多任务，还支持优先级机制，
+不同的程序可以运行在不同的优先级上。
+优先级分为 0～3 共 4 个级别，
+操作系统运行在最高的优先级 0 上，
+应用程序则运行在比较低的级别上；
+配合良好的检查机制后，
+既可以在任务间实现数据的安全共享也可以很好地隔离各个任务。
+
+\subsubsection{Intel 80386 内存架构}
+
+80386 是 32 位的处理器，
+即可以寻址的物理内存地址空间为 $2^{32} =$ 4G 字节。
+在理解操作系统的过程中，需要用到三个地址空间的概念。
+地址是访问地址空间的索引。
+\subparagraph{物理地址空间}
+是处理器提交到总线上，
+用于访问计算机系统中的内存和外设的最终地址。
+一个计算机系统中只有一个物理地址空间。
+
+\subparagraph{线性地址空间}
+是每个运行的应用程序看到的地址空间，
+在操作系统的虚存管理之下，
+每个运行的应用程序都认为自己独享整个计算机系统的地址空间，
+这样可让多个运行的应用程序之间相互隔离。
+处理器负责把线性地址转换成物理地址。
+一个计算机系统中可以有多个线性地址空间
+（比如一个运行的程序就可以有一个私有的线性地址空间）。
+并且线性地址空间的大小与物理地址空间的大小没有必然的连续。
+
+\subparagraph{逻辑地址空间}
+是应用程序直接使用的地址空间。
+这是由于 80386 中无法禁用段机制，
+使得逻辑地址一直存在。
+
+以下列 C 代码为例，解释上述三种地址之间的关系：
+
+\begin{small}
+\begin{ccode1}
+int boo = 1;
+int *foo = &boo;
+\end{ccode1}
+\end{small}
+
+\noindent
+这里的 boo 是一个整型变量，
+foo 变量是一个指向 boo 地址的整型指针变量，
+foo 中储存的内容就是 boo 的逻辑地址。
+逻辑地址由一个 16 位的段寄存器和一个 32 位的偏移量构成。
+foo 中放的就是 32 位的偏移量，而对应的段信息位于段寄存器中。
+
+上述三种地址的关系如下：
+
+\begin{itemize}
+    \item %
+        分段机制启动、分页机制未启动：\\
+        {\bf{逻辑地址}} $\Rightarrow$ 段机制处理 $\Rightarrow$ {\bf{线性地址}} %
+            $=$ {\bf{物理地址}}
+    \item %
+        分段机制和分页机制都启动：\\
+        {\bf{逻辑地址}} $\Rightarrow$ 段机制处理 $\Rightarrow$ {\bf{线性地址}} %
+            $\Rightarrow$ 页机制处理 $\Rightarrow$ {\bf{物理地址}}
+\end{itemize}
+
+x86\_64 长模式与保护模式相比，在内存访问上发生了较大的改动。
+主要表现在，内存寻址不再经过段机制转换，
+除了指令段寄存器 cs 依旧用来控制特权级外，
+其他段寄存器都不再起作用；
+而 fs、gs 则提升为两个具有特殊功能的寄存器。
+如果需要分析 64 位的 \ucore，
+可以去参考 Intel 手册了解具体的细节。
+
+\clearpage
+
+\subsubsection{Intel 80386 寄存器}
+
+80386 的寄存器可以分为 8 组：
+通用寄存器、段寄存器、指令指针寄存器、标志寄存器、
+系统地址寄存器、控制寄存器、调试寄存器以及测试寄存器，
+它们的宽度都是 32 位。
+一般程序员看到的寄存器包括通用寄存器、段寄存器、指令指针寄存器和标志寄存器，
+我们先对其做简单的介绍\footnote{
+而为了完成 \ucore 实验，我们几乎将会涉及到所有类型的寄存器。}：
+
+\paragraph{General Register}
+（通用寄存器）：EAX/EBX/ECX/EDX/ESI/EDI/ESP/EBP
+这些寄存器的低 16 位就是 8086 的 AX/BX/CX/DX/SI/DI/SP/BP，
+对于 AX/BX/CX/DX 这四个寄存器来讲，
+可以单独存取它们的高 8 位和低 8 位（AH/AL/BH/BL/CH/CL/DH/DL）。
+
+它们的含义如下：
+\begin{footnotesize}
+\begin{longtable}[htbp]
+{|>{\centering}p{0.2\textwidth}|@{\hspace{4em}}>{\raggedright}p{0.5\textwidth}|}
+\hline
+EAX & 累加器 \tabularnewline\hline
+EBX & 基址寄存器 \tabularnewline\hline
+ECX & 计数器 \tabularnewline\hline
+EDX & 数据寄存器 \tabularnewline\hline
+ESI & 源地址指针寄存器 \tabularnewline\hline
+EDI & 目的地址指针寄存器 \tabularnewline\hline
+EBP & 基址指针寄存器 \tabularnewline\hline
+ESP & 堆栈指针寄存器 \tabularnewline\hline
+\end{longtable}
+\end{footnotesize}
+
+\begin{footnotesize}
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[x=0.05\textwidth,y=1em,auto,start chain=going below]
+    \tikzstyle{every node}=[fill=none,rectangle,minimum height=1.4em,draw,node distance=0pt,inner sep=0pt]
+
+    \node[on chain] (label0) at (0,0) {\makebox[0.6\textwidth]{}};
+    \foreach \i in {1,...,7} {
+        \node[on chain,minimum height=3pt] {\makebox[0.6\textwidth]{}};
+        \node[on chain] (label\i) {\makebox[0.6\textwidth]{}};
+    }
+    \foreach \i in {0,...,7} {
+        \draw[-] (label\i.north) -- +(0,-3pt);
+        \draw[-] (label\i.south) -- +(0,3pt);
+        \draw[-] let \p1=(label\i.north) in %
+            (3,\y1) -- +(0,-3pt);
+        \draw[-] let \p1=(label\i.north) in %
+            (-3,\y1) -- +(0,-3pt);
+        \draw[-] let \p1=(label\i.south) in %
+            (3,\y1) -- +(0,3pt);
+        \draw[-] let \p1=(label\i.south) in %
+            (-3,\y1) -- +(0,3pt);
+    }
+    \draw[-] let \p1=(label0.north west),\p2=(label0.north east) in %
+        (\x1-3pt,\y1+3pt) -- (\x2+3pt,\y2+3pt);
+    \draw[-] let \p1=(label7.south west),\p2=(label7.south east) in %
+        (\x1-3pt,\y1-3pt) -- (\x2+3pt,\y2-3pt);
+    \draw[-] let \p1=(label0.north west),\p2=(label7.south west) in %
+        (\x1-3pt,\y1+3pt) -- (\x2-3pt,\y2-3pt);
+    \draw[-] let \p1=(label0.north east),\p2=(label7.south east) in %
+        (\x1+3pt,\y1+3pt) -- (\x2+3pt,\y2-3pt);
+
+    \foreach \i/\t in {-6/31,-3/23,0/15,3/7,6/0} {
+        \node [draw=none,anchor=south west] at (\i,10pt) {\scriptsize{\t}};
+    }
+
+    \foreach \i/\t in {0/EAX,1.5/AH,3/AX,4.5/AL} {
+        \draw let \p1=(label0.base) in %
+            (\i,\y1) node[draw=none] {\scriptsize{\t}};
+    }
+    \foreach \i/\t in {0/EDX,1.5/DH,3/DX,4.5/DL} {
+        \draw let \p1=(label1.base) in %
+            (\i,\y1) node[draw=none] {\scriptsize{\t}};
+    }
+    \foreach \i/\t in {0/ECX,1.5/CH,3/CX,4.5/CL} {
+        \draw let \p1=(label2.base) in %
+            (\i,\y1) node[draw=none] {\scriptsize{\t}};
+    }
+    \foreach \i/\t in {0/EBX,1.5/BH,3/BX,4.5/BL} {
+        \draw let \p1=(label3.base) in %
+            (\i,\y1) node[draw=none] {\scriptsize{\t}};
+    }
+    \foreach \i/\t in {0/EBP,3/BP} {
+        \draw let \p1=(label4.base) in %
+            (\i,\y1) node[draw=none] {\scriptsize{\t}};
+    }
+    \foreach \i/\t in {0/ESI,3/SI} {
+        \draw let \p1=(label5.base) in %
+            (\i,\y1) node[draw=none] {\scriptsize{\t}};
+    }
+    \foreach \i/\t in {0/EDI,3/DI} {
+        \draw let \p1=(label6.base) in %
+            (\i,\y1) node[draw=none] {\scriptsize{\t}};
+    }
+    \foreach \i/\t in {0/ESP,3/SP} {
+        \draw let \p1=(label7.base) in %
+            (\i,\y1) node[draw=none] {\scriptsize{\t}};
+    }
+\end{tikzpicture}
+\caption{通用寄存器}
+\end{figure}
+\end{footnotesize}
+
+\clearpage
+
+\paragraph{Segment Register}
+（段寄存器，也称 Segment Selector，段选择符，段选择子）：
+除了 8086 的 4 个段外（CS/DS/ES/SS），
+80386 还增加了两个段 FS/GS
+\footnote{如前所述，这两个寄存器在长模式下功能发生了改动。}
+。这些段寄存器都是 16 位的。
+
+它们的含义如下：
+（通用寄存器）：EAX/EBX/ECX/EDX/ESI/EDI/ESP/EBP
+这些寄存器的低 16 位就是 8086 的 AX/BX/CX/DX/SI/DI/SP/BP，
+对于 AX/BX/CX/DX 这四个寄存器来讲，
+可以单独存取它们的高 8 位和低 8 位（AH/AL/BH/BL/CH/CL/DH/DL）。
+
+它们的含义如下：
+\begin{footnotesize}
+\begin{longtable}[htbp]
+{|>{\centering}p{0.2\textwidth}|@{\hspace{4em}}>{\raggedright}p{0.5\textwidth}|}
+\hline
+CS & 代码段（Code Segment） \tabularnewline\hline
+DS & 数据段（Data Segment） \tabularnewline\hline
+ES & 附加数据段（Extra Segment） \tabularnewline\hline
+SS & 堆栈段（Stack Segment） \tabularnewline\hline
+FS & 附加段 \tabularnewline\hline
+GS & 附加段 \tabularnewline\hline
+\end{longtable}
+\end{footnotesize}
+
+\begin{footnotesize}
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[x=0.05\textwidth,y=1em,auto,start chain=going below]
+    \tikzstyle{every node}=[fill=none,rectangle,minimum height=1.4em,draw,node distance=0pt,inner sep=0pt]
+
+    \node[on chain] (label0) at (0,0) {\makebox[0.6\textwidth]{}};
+    \foreach \i in {1,...,5} {
+        \node[on chain,minimum height=3pt] {\makebox[0.6\textwidth]{}};
+        \node[on chain] (label\i) {\makebox[0.6\textwidth]{}};
+    }
+    \foreach \i in {0,...,5} {
+        \draw[-] (label\i.north) -- +(0,-3pt);
+        \draw[-] (label\i.south) -- +(0,3pt);
+    }
+    \draw[-] let \p1=(label0.north west),\p2=(label0.north east) in %
+        (\x1-3pt,\y1+3pt) -- (\x2+3pt,\y2+3pt);
+    \draw[-] let \p1=(label5.south west),\p2=(label5.south east) in %
+        (\x1-3pt,\y1-3pt) -- (\x2+3pt,\y2-3pt);
+    \draw[-] let \p1=(label0.north west),\p2=(label5.south west) in %
+        (\x1-3pt,\y1+3pt) -- (\x2-3pt,\y2-3pt);
+    \draw[-] let \p1=(label0.north east),\p2=(label5.south east) in %
+        (\x1+3pt,\y1+3pt) -- (\x2+3pt,\y2-3pt);
+
+    \foreach \i/\t in {-6/15,0/7,3/7,6/0} {
+        \node [draw=none,anchor=south west] at (\i,10pt) {\scriptsize{\t}};
+    }
+
+    \foreach \i/\t in {%
+            0/CS <Code Segment>,%
+            1/DS <Data Segment>,%
+            2/ES <Data Segment>,%
+            3/FS <Data Segment>,%
+            4/GS <Data Segment>,%
+            5/SS <Stack Segment>} {
+        \draw let \p1=(label\i.base) in %
+            (\x1,\y1) node[draw=none] {\scriptsize{\t}};
+    }
+\end{tikzpicture}
+\caption{段寄存器}
+\end{figure}
+\end{footnotesize}
+
+\paragraph{Instruction Pointer}
+（指令指针寄存器）：EIP 的低 16 位就是 8086 的 IP，
+它存储的是下一条要执行指令的内存地址，
+在分段地址转换中，表示指令的段内偏移地址。
+
+\begin{footnotesize}
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[x=0.05\textwidth,y=1em,auto]
+    \tikzstyle{every node}=[fill=none,rectangle,minimum height=1.4em,draw,node distance=0pt,inner sep=0pt]
+
+    \node (label) at (0,0) {\makebox[0.6\textwidth]{}};
+    \draw[-] (label.north) -- +(0,-3pt);
+    \draw[-] (label.south) -- +(0,3pt);
+    \draw[-] let \p1=(label.north) in %
+        (3,\y1) -- +(0,-3pt);
+    \draw[-] let \p1=(label.north) in %
+        (-3,\y1) -- +(0,-3pt);
+    \draw[-] let \p1=(label.south) in %
+        (3,\y1) -- +(0,3pt);
+    \draw[-] let \p1=(label.south) in %
+        (-3,\y1) -- +(0,3pt);
+
+    \draw[-] let \p1=(label.north west),\p2=(label.north east) in %
+        (\x1-3pt,\y1+3pt) -- (\x2+3pt,\y2+3pt);
+    \draw[-] let \p1=(label.south west),\p2=(label.south east) in %
+        (\x1-3pt,\y1-3pt) -- (\x2+3pt,\y2-3pt);
+    \draw[-] let \p1=(label.north west),\p2=(label.south west) in %
+        (\x1-3pt,\y1+3pt) -- (\x2-3pt,\y2-3pt);
+    \draw[-] let \p1=(label.north east),\p2=(label.south east) in %
+        (\x1+3pt,\y1+3pt) -- (\x2+3pt,\y2-3pt);
+
+    \foreach \i/\t in {-6/31,-3/23,0/15,3/7,6/0} {
+        \node [draw=none,anchor=south west] at (\i,10pt) {\scriptsize{\t}};
+    }
+
+    \foreach \i/\t in {0/EIP,3/IP} {
+        \draw let \p1=(label.base) in %
+            (\i,\y1) node[draw=none] {\scriptsize{\t}};
+    }
+\end{tikzpicture}
+\caption{指令寄存器}
+\end{figure}
+\end{footnotesize}
+
+\clearpage
+
+\paragraph{Flag Register}
+（状态寄存器）：EFLAGS，和 8086 的 16 位标志寄存器相比，
+增加了若干控制位以及一些保留位，
+这些位控制/标志位的含义以及对应位置如下所示
+\footnote{x86\_64 长模式下，
+EFLAGS 扩展为 64 位的 RFLAGS，
+不过这些扩展位全部为保留位。}：
+
+\begin{footnotesize}
+\begin{longtable}[htbp]
+{|>{\centering}p{0.1\textwidth}@{\hspace{4em}}|>{\raggedright}p{0.15\textwidth}@{：}>{\raggedright}p{0.5\textwidth}|}
+\hline
+CF & Carry Flag & 进位标志位 \tabularnewline\hline
+PF & Parity Flag & 奇偶标志位 \tabularnewline\hline
+AF & Assistant Flag & 辅助进位标志位 \tabularnewline\hline
+ZF & Zero Flag & 零标志位 \tabularnewline\hline
+SF & Singal Flag & 符号标志位 \tabularnewline\hline
+IF & Interrupt Flag & 中断允许标志位，由 CLI、STI 两条指令来控制。
+    设置 IF 使 CPU 可识别外部（可屏蔽）中断请求；
+    复位 IF 则禁止中断。 IF 对不可屏蔽外部中断和故障中断的识别没有任何作用。 \tabularnewline\hline
+DF & Direction Flag & 向量标志位，由CLD，STD两条指令来控制。 \tabularnewline\hline
+OF & Overflow Flag & 溢出标志位 \tabularnewline\hline
+IOPL & I/O Privilege Level & I/O特权级字段，它的宽度为 2 位,
+    它指定了 I/O 指令的特权级。如果当前的特权级别在数值上小于或等于 IOPL，
+    那么 I/O 指令可执行。否则，将发生一个保护性故障中断。 \tabularnewline\hline
+NT & Nested Task & 控制中断返回指令 IRET，它宽度为 1 位。
+    若 NT = 0，则用堆栈中保存的值恢复 EFLAGS、CS 和 EIP 从而实现中断返回；
+    若 NT = 1，则通过任务切换实现中断返回。 \tabularnewline\hline
+\end{longtable}
+\end{footnotesize}
+
+\begin{footnotesize}
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[x=0.05\textwidth,y=1em,auto,start chain=going left]
+    \tikzstyle{every node}=[fill=none,rectangle,draw=none,minimum height=0.8em,node distance=0pt,inner sep=0pt,anchor=north east]
+
+    \newcommand{\minibox}[2]{\parbox[c][2.6em]{#1}{\footnotesize\centering{#2}}}
+    \node [on chain] (labelx) at (0,0) {};
+    \foreach \i/\t in {%
+            0/C\linebreak{}F,
+            1/1,
+            2/P\linebreak{}F,
+            3/0,
+            4/A\linebreak{}F,
+            5/0,
+            6/Z\linebreak{}F,
+            7/S\linebreak{}F,
+            8/T\linebreak{}F,
+            9/I\linebreak{}F,
+            10/D\linebreak{}F,
+            11/O\linebreak{}F} {%
+        \node [on chain] (label\i) {\minibox{1.2em}{\t}};
+    }
+    \node [on chain] (label12) {\minibox{2.4em}{IO\linebreak{}PL}};
+    
+    \foreach \i/\t in {%
+            13/N\linebreak{}T,
+            14/0,
+            15/R\linebreak{}F,
+            16/V\linebreak{}M} {%
+        \node [on chain] (label\i) {\minibox{1.2em}{\t}};
+    }
+    \foreach \i in {17,...,30} {%
+        \node [on chain] (label\i) {\minibox{1.2em}{0}};
+    }
+
+    \draw[-] (label0.north east) -- (label30.north west);
+    \draw[-] (label0.south east) -- (label30.south west);
+
+    \draw[-] let \p1=(label30.north west),\p2=(label0.north east) in %
+        (\x1-3pt,\y1+3pt) -- (\x2+3pt,\y2+3pt);
+    \draw[-] let \p1=(label30.south west),\p2=(label0.south east) in %
+        (\x1-3pt,\y1-3pt) -- (\x2+3pt,\y2-3pt);
+    \draw[-] let \p1=(label30.north west),\p2=(label30.south west) in %
+        (\x1-3pt,\y1+3pt) -- (\x2-3pt,\y2-3pt);
+    \draw[-] let \p1=(label0.north east),\p2=(label0.south east) in %
+        (\x1+3pt,\y1+3pt) -- (\x2+3pt,\y2-3pt);
+
+    \foreach \i/\t in {0/0,7/7,14/15,22/23,30/31} {
+        \draw let \p1=(label\i.north) in %
+            (\x1,\y1+5pt) node [anchor=south] {\footnotesize{\t}};
+    }
+    \foreach \i in {0,...,30} {
+        \draw[-] (label\i.north west) -- (label\i.south west);
+    }
+    \draw[-] (label0.north east) -- (label0.south east);
+
+    \draw[-] let \p1=(label7.north) in %
+        (\x1,\y1+20pt) node (A) {} -- +(0,5pt) node [anchor=south] {\footnotesize{16-BIT FLAG REGISTER}};
+    \draw[-] let \p1=(label0.north),\p2=(label14.north) in %
+        (\x1,\y1+20pt) -- +(\x2-\x1,0);
+    \draw[-] let \p1=(label0.north) in %
+        (\x1,\y1+20pt) -- +(0,-3pt);
+    \draw[-] let \p1=(label14.north) in %
+        (\x1,\y1+20pt) -- +(0,-3pt);
+
+    {[start chain=subchain1 going below]
+        \draw let \p1=(label22.south) in %
+            (\x1,\y1) node(B) {};
+        \node [on chain] at (B.base) {};
+        \foreach \i/\t/\s in {
+                16/{VIRTUAL 8086 MODE}/X,
+                15/{RESUME FLAG}/X,
+                13/{NESTED TASK FLAG}/X,
+                12/{I/O PRIVILEGE LEVEL}/X,
+                11/{OVERFLOW FLAG}/S,
+                10/{DIRECTION FLAG}/C,
+                9/{INTERRUPT ENABLE FLAG}/X,
+                8/{TRAP FLAG (SINGLE STEP)}/X,
+                7/{SIGN FLAG}/S,
+                6/{ZERO FLAG}/S,
+                4/{ADJUST FLAG}/S,
+                2/{PARITY FLAG}/S,
+                0/{CARRY FLAG}/S} {
+            \node [on chain] (X) {\makebox[0.25\textwidth]%
+                {\hfill\scriptsize{\t\hspace{1em}\s}}};
+            \draw let \p1=(X.east),\p2=(label\i.south) in %
+                [-] (\x1+5pt,\y1) -- (\x2,\y1);
+            \draw let \p1=(X.east),\p2=(label\i.south) in %
+                [-] (\x2,\y1) -- (\x2,\y2-3pt);
+        }
+    }
+    \draw let \p1=(label14.base) in %
+        (\x1,\y1-14em) node[anchor=north] {\makebox[0.4\textwidth]%
+            {\scriptsize{S=STATUS, C=CONTROL, X=SYSTEM}}};
+\end{tikzpicture}
+\caption{状态寄存器}
+\end{figure}
+\end{footnotesize}

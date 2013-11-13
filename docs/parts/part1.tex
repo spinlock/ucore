@@ -1,0 +1,116 @@
+\part{系统启动}
+
+\section*{\HandRight\hspace{0.5em}实验目的}
+\begin{minipage}[t]{0.8\textwidth}
+\begin{heiti}
+\begin{itemize}
+\renewcommand\labelitemi{\FiveStarShadow}
+    \item \begin{large} 了解内核加载的过程 \end{large}
+    \item \begin{large} 掌握内核调试的方法 \end{large}
+    \item \begin{large} 熟悉分段的内存管理以及设备管理的概念 \end{large}
+    \item \begin{large} 学习中断触发机制以及处理流程 \end{large}
+\end{itemize}
+\end{heiti}
+\end{minipage}
+
+\chapter{系统加载和启动}
+
+操作系统本身也是一种软件，
+也需要通过某种环境和机制来加载和运行它。
+在这里，我们首先通过一个更加简单的软件 \cndash{\it{bootloader}} 来完成这样的工作。
+\ucore 里面，我们提供了一个非常小的 bootloader，
+整个程序编译后的大小不超过一个扇区（512 byte），
+这样才能放到硬盘的主引导扇区。
+
+这部分所有章节，围绕着 lab1，
+主要介绍了\ucore 是如何加载和运行、如何处理和分发中断以及如何完成硬件自我调试的。
+过程中，我们会逐渐熟悉 x86 硬件平台以及各种调试手段。
+为后面完成更复杂的系统模块积累经验。
+
+\section{了解 bootloader}
+
+lab1 中包含了三部分与 bootloader 有关的小例子：
+\begin{itemize}
+    \item %
+        {\bf{project1：}}
+        bootloader 完成从 x86 实模式到保护模式的切换；
+    \item %
+        {\bf{project2：}}
+        bootloader 实现简单的磁盘驱动，
+        能够从磁盘读取和加载 ELF 可执行格式的程序；
+    \item %
+        {\bf{project3：}}
+        bootloader 将 \ucore 内核从磁盘 ucore.img 中读取，
+        然后加载到内存，并最终将 CPU 交给 \ucore。 
+\end{itemize}
+
+下图描述了三个 project 之间的关系，
+`$\rightarrow$' 描述两个 project 之间的依赖关系
+\footnote{\ucore 是按照 project 的顺序逐步实现，
+直到最后完成一个完整的内核系统。
+每个 project 都在前一个 project 的基础上做最小修改，
+我们可以通过 diff 直接观察到这种代码上的变化。}：
+
+\begin{footnotesize}
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[x=0.05\textwidth,y=1em,auto]
+    \tikzstyle{every node}=[fill=none,rectangle,draw,node distance=0pt,inner sep=3pt,outer sep=3pt]
+
+    \node (proj1) {\makebox[0.15\textwidth]{project 1}};
+    \draw let \p1=(proj1.east) in %
+        [->] (\p1) -- +(20pt,0) node[anchor=west] (proj2) {\makebox[0.15\textwidth]{project 2}};
+    \draw let \p1=(proj2.east) in %
+        [->] (\p1) -- +(20pt,0) node[anchor=west] (proj3) {\makebox[0.15\textwidth]{project 3}};
+    \draw let \p1=(proj3.east) in %
+        [->] (\p1) -- +(10pt,0) node [draw=none,anchor=west] (A) {...};
+
+\end{tikzpicture}
+\end{figure}
+\end{footnotesize}
+
+\clearpage
+
+project 1 是最小的 bootloader 例子，整个目录十分简单，结构如下：
+\begin{figure}[h]
+    \centering
+    \scalebox{0.8}{
+        \begin{minipage}{\textwidth}
+            \setlength{\baselineskip}{1.3em}
+            \newcommand{\minibox}[1]{%
+            \begin{minipage}[t]{0.7\textwidth}\setlength{\baselineskip}{1.2em}%
+                {#1}\end{minipage}}
+            \dirtree{%
+                .1 \bf{proj1/}.
+                .2 \bf{boot}.
+                .3 asm.h.
+                .3 bootasm.S.
+                .3 bootmain.c.
+                .2 \bf{libs}.
+                .3 types.h.
+                .3 x86.h.
+                .2 \bf{tools}.
+                .3 function.mk.
+                .3 gdbinit.
+                .3 sign.c.
+            }
+        \end{minipage}
+    }
+\end{figure}
+
+其中一些比较重要的文件说明如下：
+\begin{footnotesize}
+\begin{itemize}
+    \item %
+        {\bf{bootasm.S：}}
+        定义并实现了 bootloader 的入口函数 start。
+        此函数进行了一系列初始化操作，
+        然后完成了从实模式到保护模式的转换。
+        在设置好函数栈以后，通过跳转指令，
+        跳转到 bootmain.c 中的 bootmain 函数，完成从汇编语言到高级语言的跳转。
+\end{itemize}
+\end{footnotesize}
+
+\chapter{中断和异常处理}
+
+\chapter{硬件调试}

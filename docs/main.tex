@@ -1,0 +1,276 @@
+%!TEX encoding = UTF-8 Unicode %
+
+\documentclass[a4paper,cs4size,oneside,cap]{ctexrep}
+
+\usepackage{amsmath,amssymb,amsfonts,amsthm,epsfig,bm,xspace,latexsym}
+\usepackage{enumitem}
+\usepackage{fix-cm}
+\usepackage[bottom]{footmisc}
+\usepackage{geometry}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\usepackage{graphicx}
+\usepackage{mathrsfs}
+\usepackage{indentfirst}
+\usepackage{titlesec}
+\usepackage{multirow,tabularx}
+\usepackage{hyperref}
+\usepackage{listings,xcolor,color}
+\usepackage{dirtree}
+\usepackage{bbding,tikz}
+\usetikzlibrary{positioning,patterns,calc,chains,scopes}
+\usetikzlibrary{shapes,decorations,shadows,arrows,fadings}
+\usetikzlibrary{automata,backgrounds,petri}
+
+\hypersetup{
+    bookmarksnumbered,bookmarksopen,  
+    colorlinks,
+    linkcolor=red,
+    citecolor=green,
+    urlcolor=blue,
+    filecolor=magenta
+}
+
+\CTEXoptions[today=small]
+
+\include{others/colors}
+
+\setmainfont{Times New Roman}
+
+\geometry{left=2cm,right=2cm,top=2cm,bottom=2cm}
+\geometry{includehead,headheight=15pt,headsep=25pt}
+
+\fancypagestyle{plain}{%
+    \fancyhf{}
+    \renewcommand{\headrule}{}
+    \renewcommand{\footrulewidth}{0pt}
+}
+
+\pagestyle{fancy}
+
+\newcommand{\makeheadrule}{
+    \makebox[0pt][l]{\rule[0.7\baselineskip]{\headwidth}{0.8pt}}%
+    \rule[0.6\baselineskip]{\headwidth}{0.4pt}\vskip-0.8\baselineskip}
+\makeatletter
+
+\renewcommand{\headrule}{
+    {\if@fancyplain\let\headrulewidth\plainheadrulewidth\fi%
+     \makeheadrule}
+}
+\makeatother
+
+\renewcommand{\footrulewidth}{0.5pt}
+
+\fancyhf{}
+\fancyhead[L]{\leftmark}
+\fancyhead[R]{\rightmark}
+\fancyfoot[R]{Page \thepage{} of \protect\pageref*{LastPage}}
+
+\newcommand{\ucore}{\hspace{0.18em}$\mathcal{UC}ore$\hspace{0.1em}}
+
+\makeatletter
+\def\printtitle{%
+    {\centering\@title}}
+\makeatother
+
+\makeatletter
+\def\printauthor{%
+    {\centering\large\@author}}				
+\makeatother
+							
+\title{\fontsize{50}{50}\selectfont%
+    \vspace*{2cm}%
+    \hfil \ucore 说明文档%
+    \vspace*{2cm}%
+}
+
+\author{
+    \hfill 王乃峥 \\
+    \hfill 陈\hspace{1em}渝 \\
+    \hfill \\
+    \hfill \today \\
+}
+
+\graphicspath{{figures/}}
+
+\renewcommand{\contentsname}{\Huge{}目\hspace{1em}录}
+\renewcommand{\listfigurename}{\Huge{}插图索引}
+\renewcommand{\listtablename}{\Huge{}表格索引}
+\renewcommand{\figurename}{图}
+\renewcommand{\tablename}{表}
+
+%% \newtheorem{exercise}{练习}[chapter]
+%% \newtheorem{problem}{问题}[chapter]
+%% \newtheorem{example}{例}[chapter]
+
+\titleformat{\part}[hang]{\Huge\bfseries}%
+    {第\hspace{0.25em}\thepart\hspace{0.25em}部分：}{0.3em}{}
+
+\titleformat{\chapter}[hang]{\huge\bfseries}%
+    {\CTEXnumber{\thezhchapter}{\thechapter}%
+        \raggedright{}第\hspace{0.25em}\thezhchapter\hspace{0.25em}章：}{0.3em}{}
+
+\titleformat{\section}[hang]{\LARGE\bfseries}%
+    {\raggedright\thesection}{0.2em}{}
+
+\titleformat{\subsection}[hang]{\Large\bfseries}%
+    {\raggedright\thesubsection}{0.2em}{}
+
+\titleformat{\subsubsection}[hang]{\large\bfseries}%
+    {\raggedright\thesubsubsection}{0.2em}{}
+
+\makeatletter
+\renewcommand\chapter{\par%
+  \thispagestyle{plain}%
+  \global\@topnum\z@
+  \@afterindentfalse
+  \secdef\@chapter\@schapter}
+\makeatother
+
+\renewcommand{\chaptermark}[1]{\markboth{\bfseries{#1}}{}}
+
+\newcommand{\newpart}[1]{\include{parts/#1} \clearpage}
+
+\setlist{noitemsep}
+\setenumerate{topsep=0pt,labelindent=\parindent,%
+    leftmargin=4em,rightmargin=2em,listparindent=\parindent}
+
+\setitemize{topsep=0pt,labelindent=\parindent,%
+    leftmargin=4em,rightmargin=2em,listparindent=\parindent}
+
+\newcommand{\cndash}{\rule{0.0em}{0pt}\rule[0.35em]{1.6em}{0.05em}\rule{0.2em}{0pt}}
+
+\lstset{
+	basicstyle=\ttfamily\footnotesize,
+	identifierstyle=\ttfamily\footnotesize,
+	keywordstyle=\color[RGB]{0,170,0},
+	commentstyle=\color[RGB]{0,0,139},
+	stringstyle=\color[RGB]{235,0,0},
+	showspaces=false,
+	showstringspaces=true,
+	tabsize=4,
+	rulesepcolor=\color[RGB]{190,190,190},
+	escapeinside=``,
+	xleftmargin=1.5em,
+	xrightmargin=1.5em, 
+	aboveskip=1em,
+    lineskip=0pt,
+    breaklines,
+    extendedchars=false,
+    firstnumber=1,
+    stepnumber=1
+}
+
+\lstnewenvironment{bashcode0}{\lstset{language={bash},%
+    aboveskip=0pt,%
+    frame=none,%
+    lineskip=-0.05em,%
+    xleftmargin=0.6em,%
+    xrightmargin=0.6em,%
+    basewidth={0.45em,0.35em},%
+    showstringspaces=false,%
+    commentstyle=\color{black},%
+    keywordstyle=\color{black}}
+}{}
+
+\lstnewenvironment{bashcode1}{\lstset{language={bash},%
+	frame=single,framerule=0pt,%
+    backgroundcolor=\color[rgb]{0.95,0.95,0.95},%
+    showstringspaces=false,%
+    commentstyle=\color{black},%
+    keywordstyle=\color{black}}%
+}{}
+
+\lstnewenvironment{bashcode2}{\lstset{language={bash},%
+    frameround=ttft,frame=trBL,framerule=0.3pt,%
+    showstringspaces=false,%
+    commentstyle=\color{black},%
+    keywordstyle=\color{black}}%
+}{}
+
+\lstnewenvironment{ccode1}{\lstset{language={C},%
+	frame=single,framerule=0pt,%
+    backgroundcolor=\color[rgb]{0.95,0.95,0.95},%
+    showstringspaces=false}%
+}{}
+
+\lstnewenvironment{ccode2}{\lstset{language={C},%
+    numbers=left,numberstyle=\tiny,%
+    frameround=ttft,frame=trBL,framerule=0.3pt,%
+    showstringspaces=false}%
+}{}
+
+
+\newcolumntype{I}{!{\vrule width 3pt}}
+\newlength\savedwidth
+\newcommand\whline{\noalign{\global\savedwidth\arrayrulewidth
+    \global\arrayrulewidth 3pt}%
+    \hline
+    \noalign{\global\arrayrulewidth\savedwidth}}
+\newlength\savewidth
+\newcommand\shline{\noalign{\global\savewidth\arrayrulewidth
+    \global\arrayrulewidth 1.5pt}%
+    \hline
+    \noalign{\global\arrayrulewidth\savewidth}}
+
+\usepackage{booktabs}
+
+\begin{document}
+
+\setlength{\parindent}{2em}
+\setlength{\baselineskip}{1.4em}
+\setlength{\parskip}{1ex}
+
+\thispagestyle{empty}
+
+\begin{center}
+    \colorbox{Grey}{
+        \parbox[t]{\textwidth}{
+            \printtitle
+        } 
+	}
+\end{center}
+
+\vspace*{0.4\textheight}
+\printauthor
+\hfill\rule{0.24\linewidth}{0.6pt}
+\clearpage
+
+\tableofcontents
+\clearpage
+
+\setcounter{page}{1}
+
+\newpart{part0}
+\newpart{part1}
+%% \newpart{part2}
+%% \newpart{part3}
+%% \newpart{part4}
+%% \newpart{part5}
+%% \newpart{part6}
+    
+\makeatletter
+\listoftables
+\listoffigures
+\makeatother
+
+\end{document}
+
+
+
+%% \usepackage{makecell}
+%% \usepackage{amsmath,amssymb,amsfonts,amsthm,epsfig,bm,xspace,latexsym}
+%% \usetikzlibrary{shapes,decorations,shadows,arrows,fadings}
+%% \usetikzlibrary{automata,backgrounds,petri}
+%% \usetikzlibrary{shapes.geometric}
+%% \usepackage{enumerate}
+
+%% \newtheorem{remark}{注释}[chapter]
+%% \newtheorem{conjecture}{猜想}[chapter]
+
+%% \newcommand\listequationname{公式索引}
+%% \newcommand\equationname{公式}
+%% \renewcommand\bibname{参考文献}
+%% \renewcommand\indexname{索引}
