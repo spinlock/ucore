@@ -130,7 +130,7 @@ KSRCDIR		+= kern/init \
 			   kern/libs \
 			   kern/driver
 
-KCFLAGS		+= $(addprefix -I,$(KINCLUDE)) $(CC32)
+KCFLAGS		+= $(addprefix -I,$(KINCLUDE)) $(CC32) -O2
 
 $(call add_files_cc,$(call listf_cc,$(KSRCDIR)),kernel,$(KCFLAGS))
 

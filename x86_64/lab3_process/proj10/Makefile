@@ -145,7 +145,7 @@ KSRCDIR		+= kern/init \
 			   kern/process \
 			   kern/schedule
 
-KCFLAGS		+= $(addprefix -I,$(KINCLUDE)) $(CC64)
+KCFLAGS		+= $(addprefix -I,$(KINCLUDE)) $(CC64) -O2
 
 $(call add_files_cc,$(call listf_cc,$(KSRCDIR)),kernel,$(KCFLAGS))
 

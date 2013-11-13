@@ -141,7 +141,7 @@ KSRCDIR		+= kern/init \
 			   kern/sync \
 			   kern/fs
 
-KCFLAGS		+= $(addprefix -I,$(KINCLUDE)) $(CC64)
+KCFLAGS		+= $(addprefix -I,$(KINCLUDE)) $(CC64) -O2
 
 $(call add_files_cc,$(call listf_cc,$(KSRCDIR)),kernel,$(KCFLAGS))
 
