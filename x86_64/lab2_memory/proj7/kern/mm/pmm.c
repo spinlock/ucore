@@ -100,7 +100,7 @@ lgdt(struct pseudodesc *pd) {
         "call 1f;"                      // push %rip
         "jmp 2f;"
         "1: iretq; 2:"
-        :: "i" (KERNEL_CS), "i" (KERNEL_DS));
+        :: "i" (KERNEL_CS), "i" (KERNEL_DS) : "rax");
 }
 
 /* *
